@@ -334,58 +334,52 @@ function listVirtualenvs(): { label: string; path: string }[] {
 
 function listCondaEnvs(): Promise<{ label: string; path: string }[]> {
     return new Promise((resolve) => {
-        exec('conda env list', (error, stdout, stderr) => {
+        
+        const cmd = `source ~/.zshrc && conda env list --json`;
+
+        exec(cmd, { shell: '/bin/zsh' }, (error, stdout, stderr) => {
             if (error) {
-                // If conda not installed or error, just return empty
+                console.error('Could not run conda env list:', error);
                 return resolve([]);
             }
-
-            // Typical conda env list output:
-            // # conda environments:
-            // #
-            // base                     *  /Users/you/miniconda3
-            // myenv                      /Users/you/miniconda3/envs/myenv
-            // ...
-            const lines = stdout.split('\n');
-            const result: { label: string; path: string }[] = [];
-            for (const line of lines) {
-                if (!line.trim() || line.trim().startsWith('#')) {
-                    continue;
-                }
-                // e.g. "base         *  /Users/you/miniconda3"
-                // or   "myenv           /Users/you/miniconda3/envs/myenv"
-                const parts = line.split(/\s+/);
-                // The env name is first, the path typically last
-                if (parts.length >= 2) {
-                    const envName = parts[0].trim();
-                    // The path might be in the last column
-                    const envPath = parts[parts.length - 1].trim();
-                    // Make sure it looks like a path
-                    if (envPath.startsWith('/') || envPath.includes(':\\')) {
+            try {
+                const data = JSON.parse(stdout);
+                if (Array.isArray(data.envs)) {
+                    // data.envs is an array of absolute paths to each env
+                    // e.g. "/Users/you/miniconda3/envs/myenv"
+                    const results: { label: string; path: string }[] = [];
+                    for (const envPath of data.envs) {
+                        // We'll parse the env name from the folder name
+                        // e.g. "myenv" from ".../envs/myenv"
+                        const envName = path.basename(envPath);
                         const label = `conda: ${envName}`;
-                        // The actual python binary is typically <envPath>/bin/python
-                        // but on Windows it may be <envPath>\\python.exe
-                        // We'll assume Unix-like for now:
-                        const pythonBin = path.join(envPath, 'bin', 'python');
-                        if (fs.existsSync(pythonBin)) {
-                            result.push({
-                                label,
-                                path: pythonBin
-                            });
+
+                        // On Unix, the python binary is typically at <envPath>/bin/python
+                        // If it doesn't exist, maybe we're on Windows, so fallback to something else.
+                        const pyBin = path.join(envPath, 'bin', 'python');
+                        if (fs.existsSync(pyBin)) {
+                            results.push({ label, path: pyBin });
                         } else {
-                            // fallback if bin doesn't exist (maybe Windows?)
-                            result.push({
-                                label,
-                                path: envPath
-                            });
+                            // On Windows, it might be <envPath>\\python.exe
+                            const winBin = path.join(envPath, 'python.exe');
+                            if (fs.existsSync(winBin)) {
+                                results.push({ label, path: winBin });
+                            } else {
+                                // Fallback if we can't detect the binary
+                                results.push({ label, path: envPath });
+                            }
                         }
                     }
+                    return resolve(results);
                 }
+            } catch (parseErr) {
+                console.error('Failed to parse conda --json output:', parseErr);
             }
-            resolve(result);
+            return resolve([]);
         });
     });
 }
+
 
 // ---------------------------------------------
 // Extract code blocks for chosen environment
