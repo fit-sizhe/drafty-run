@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { PythonRunner } from './pythonRunner';
-import { CellOutput, CodeBlock } from './types';
+import { CellOutput, CodeBlock, CodeBlockExecution } from './types';
 
 // ---------------------------------------------
 // Global/Session State
@@ -15,9 +15,8 @@ let currentPanel: vscode.WebviewPanel | undefined;
 let nodeGlobalState: { [key: string]: any } = {};
 
 interface SessionState {
-    codeBlocks: CodeBlock[];
+    codeBlocks: Map<string, CodeBlockExecution>;
     currentBlockIndex: number;
-    allOutputs: CellOutput[];
 }
 let sessionState: SessionState | undefined = undefined;
 
@@ -76,38 +75,53 @@ async function runNextBlockHandler() {
         return;
     }
 
-    if (sessionState.currentBlockIndex >= sessionState.codeBlocks.length) {
+    const blockCount = sessionState.codeBlocks.size;
+    if (sessionState.currentBlockIndex >= blockCount) {
         vscode.window.showInformationMessage('All code blocks executed');
         return;
     }
 
-    const currentBlock = sessionState.codeBlocks[sessionState.currentBlockIndex];
+    const blockId = `block-${sessionState.currentBlockIndex}`;
+    const currentBlock = sessionState.codeBlocks.get(blockId);
+    if (!currentBlock) {
+        return;
+    }
+
+    // Update block metadata to running state
+    currentBlock.metadata = {
+        status: 'running',
+        timestamp: Date.now()
+    };
+
     try {
         if (selectedEnvironment === 'python') {
             const outputs = await PythonRunner.getInstance().executeCode(currentBlock.content, selectedPythonPath);
-            sessionState.allOutputs.push(...outputs);
-            updatePanel(sessionState.allOutputs);
+            currentBlock.outputs = outputs;
+            currentBlock.metadata.status = 'success';
         } else if (selectedEnvironment === 'node') {
             const result = await executeNodeCode(currentBlock.content);
-            sessionState.allOutputs.push({
+            currentBlock.outputs = [{
                 type: 'text',
                 timestamp: Date.now(),
                 content: result,
                 stream: 'stdout'
-            });
-            updatePanel(sessionState.allOutputs);
+            }];
+            currentBlock.metadata.status = 'success';
         }
     } catch (error) {
         const errStr = error instanceof Error ? error.message : String(error);
-        sessionState.allOutputs.push({
+        currentBlock.outputs = [{
             type: 'error',
             timestamp: Date.now(),
             error: errStr,
             traceback: []
-        });
-        updatePanel(sessionState.allOutputs);
+        }];
+        currentBlock.metadata.status = 'error';
     }
 
+    currentBlock.metadata.executionTime = Date.now() - currentBlock.metadata.timestamp;
+    sessionState.codeBlocks.set(blockId, currentBlock);
+    updatePanel();
     sessionState.currentBlockIndex++;
 }
 
@@ -174,14 +188,26 @@ async function startSessionHandler() {
     const tokens = md.parse(markdown, {});
     const codeBlocks = extractCodeBlocks(tokens);
 
-    // Initialize session
+    // Initialize session with a Map to track block executions
+    const blockMap = new Map<string, CodeBlockExecution>();
+    codeBlocks.forEach((block, index) => {
+        const blockId = `block-${index}`;
+        blockMap.set(blockId, {
+            ...block,
+            metadata: {
+                status: 'pending',
+                timestamp: Date.now()
+            },
+            outputs: []
+        });
+    });
+
     sessionState = {
-        codeBlocks,
-        currentBlockIndex: 0,
-        allOutputs: []
+        codeBlocks: blockMap,
+        currentBlockIndex: 0
     };
 
-    updatePanel([]);
+    updatePanel();
     vscode.window.showInformationMessage('Session started! Use "Run Next Block" or CodeLens to run code.');
 }
 
@@ -243,44 +269,53 @@ async function runSingleCodeBlock(code: string) {
         }
     }
 
-    // Actually run
+    // Create or get block execution
+    const blockId = !sessionState ? 'single-block' : `block-${sessionState.currentBlockIndex}`;
+    const blockExecution: CodeBlockExecution = {
+        content: code,
+        info: selectedEnvironment || '',
+        metadata: {
+            status: 'running',
+            timestamp: Date.now()
+        },
+        outputs: []
+    };
+
     try {
-        let newOutputs: CellOutput[] = [];
         if (selectedEnvironment === 'python') {
-            const outputs = await PythonRunner.getInstance().executeCode(code, selectedPythonPath);
-            newOutputs = outputs;
+            blockExecution.outputs = await PythonRunner.getInstance().executeCode(code, selectedPythonPath);
         } else {
             const result = await executeNodeCode(code);
-            newOutputs = [
-                {
-                    type: 'text',
-                    timestamp: Date.now(),
-                    content: result,
-                    stream: 'stdout'
-                }
-            ];
+            blockExecution.outputs = [{
+                type: 'text',
+                timestamp: Date.now(),
+                content: result,
+                stream: 'stdout'
+            }];
         }
-
-        if (!sessionState) {
-            updatePanel(newOutputs);
-        } else {
-            sessionState.allOutputs.push(...newOutputs);
-            updatePanel(sessionState.allOutputs);
-        }
+        blockExecution.metadata.status = 'success';
     } catch (error) {
         const errStr = error instanceof Error ? error.message : String(error);
-        const errorOutput: CellOutput = {
+        blockExecution.outputs = [{
             type: 'error',
             timestamp: Date.now(),
             error: errStr,
             traceback: []
-        };
-        if (!sessionState) {
-            updatePanel([errorOutput]);
-        } else {
-            sessionState.allOutputs.push(errorOutput);
-            updatePanel(sessionState.allOutputs);
-        }
+        }];
+        blockExecution.metadata.status = 'error';
+    }
+
+    blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
+
+    // Update session state if it exists
+    if (sessionState) {
+        sessionState.codeBlocks.set(blockId, blockExecution);
+        updatePanel();
+    } else {
+        // Create a temporary map for single block execution
+        const tempMap = new Map<string, CodeBlockExecution>();
+        tempMap.set(blockId, blockExecution);
+        updatePanel(tempMap);
     }
 }
 
@@ -404,14 +439,15 @@ function extractCodeBlocks(tokens: any[]): CodeBlock[] {
 // ---------------------------------------------
 // Update the Webview
 // ---------------------------------------------
-function updatePanel(outputs: CellOutput[]) {
+function updatePanel(blockMap?: Map<string, CodeBlockExecution>) {
     if (!currentPanel) {
         return;
     }
-    currentPanel.webview.html = getWebviewContent(outputs);
+    const blocks = blockMap || (sessionState?.codeBlocks || new Map());
+    currentPanel.webview.html = getWebviewContent(blocks);
 }
 
-function getWebviewContent(outputs: CellOutput[]): string {
+function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
     // Build <option> tags from discoveredEnvironments
     const optionsHtml = discoveredEnvironments
         .map((env) => {
@@ -420,41 +456,53 @@ function getWebviewContent(outputs: CellOutput[]): string {
         })
         .join('');
 
-    const outputHtml = outputs
-        .map((output) => {
-            switch (output.type) {
-                case 'text':
-                    return `
-                        <div class="output-container">
-                            <div class="output text-output ${output.stream}">
-                                ${escapeHtml(output.content)}
-                            </div>
-                        </div>`;
-                case 'image':
-                    return `
-                        <div class="output-container">
-                            <div class="output image-output">
-                                <img src="data:image/${output.format};base64,${output.data}" 
-                                     alt="Output visualization" />
-                            </div>
-                        </div>`;
-                case 'error':
-                    return `
-                        <div class="output-container">
-                            <div class="output error-output">
-                                <div class="error-message">${escapeHtml(output.error)}</div>
-                            </div>
-                        </div>`;
-                case 'rich':
-                    return `
-                        <div class="output-container">
-                            <div class="output rich-output">
-                                ${output.format === 'html' ? output.content : escapeHtml(output.content)}
-                            </div>
-                        </div>`;
-                default:
-                    return '';
-            }
+    const outputHtml = Array.from(blocks.values())
+        .map((block) => {
+            const statusClass = `status-${block.metadata.status}`;
+            const executionTime = block.metadata.executionTime 
+                ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)` 
+                : '';
+            
+            const outputsHtml = block.outputs
+                .map((output) => {
+                    switch (output.type) {
+                        case 'text':
+                            return `
+                                <div class="output text-output ${output.stream}">
+                                    ${escapeHtml(output.content)}
+                                </div>`;
+                        case 'image':
+                            return `
+                                <div class="output image-output">
+                                    <img src="data:image/${output.format};base64,${output.data}" 
+                                         alt="Output visualization" />
+                                </div>`;
+                        case 'error':
+                            return `
+                                <div class="output error-output">
+                                    <div class="error-message">${escapeHtml(output.error)}</div>
+                                </div>`;
+                        case 'rich':
+                            return `
+                                <div class="output rich-output">
+                                    ${output.format === 'html' ? output.content : escapeHtml(output.content)}
+                                </div>`;
+                        default:
+                            return '';
+                    }
+                })
+                .join('\n');
+
+            return `
+                <div class="block-container ${statusClass}">
+                    <div class="block-header">
+                        <span class="status">${block.metadata.status}</span>
+                        <span class="time">${executionTime}</span>
+                    </div>
+                    <div class="block-outputs">
+                        ${outputsHtml}
+                    </div>
+                </div>`;
         })
         .join('\n');
 
@@ -474,14 +522,30 @@ function getWebviewContent(outputs: CellOutput[]): string {
         .env-picker {
             margin-bottom: 1em;
         }
-        .output-container {
+        .block-container {
             margin-bottom: 20px;
             border: 1px solid var(--vscode-panel-border);
             border-radius: 4px;
             overflow: hidden;
         }
-        .output {
+        .block-header {
+            padding: 5px 10px;
+            background: var(--vscode-editor-lineHighlightBackground);
+            border-bottom: 1px solid var(--vscode-panel-border);
+            display: flex;
+            justify-content: space-between;
+        }
+        .block-header .status {
+            text-transform: capitalize;
+        }
+        .block-header .time {
+            color: var(--vscode-descriptionForeground);
+        }
+        .block-outputs {
             padding: 10px;
+        }
+        .output {
+            margin-bottom: 10px;
         }
         .text-output {
             white-space: pre-wrap;
@@ -506,6 +570,15 @@ function getWebviewContent(outputs: CellOutput[]): string {
         }
         .rich-output {
             background-color: var(--vscode-editor-background);
+        }
+        .status-running {
+            border-color: var(--vscode-progressBar-background);
+        }
+        .status-success {
+            border-color: var(--vscode-testing-iconPassed);
+        }
+        .status-error {
+            border-color: var(--vscode-testing-iconFailed);
         }
     </style>
 </head>
