@@ -1,8 +1,9 @@
+// pythonRunner.ts
+
 import { PythonShell } from 'python-shell';
-import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { TextOutput, ImageOutput, ErrorOutput, RichOutput, CellOutput } from './types';
+import { CellOutput } from './types';
 
 const PYTHON_SETUP_CODE = `
 import sys
@@ -52,16 +53,16 @@ class OutputCollector:
         image_data = base64.b64encode(buf.getvalue()).decode('utf-8')
         
         self._add_output('image',
-                        format=format,
-                        data=image_data,
-                        metadata=kwargs)
+                         format=format,
+                         data=image_data,
+                         metadata=kwargs)
         plt.close('all')
     
     def add_error(self, error: Exception):
         tb = traceback.extract_tb(error.__traceback__)
         self._add_output('error',
-                        error=str(error),
-                        traceback=[str(frame) for frame in tb])
+                         error=str(error),
+                         traceback=[str(frame) for frame in tb])
     
     def add_rich(self, content: str, format: str = 'html'):
         self._add_output('rich', content=content, format=format)
@@ -69,19 +70,16 @@ class OutputCollector:
     def get_outputs(self):
         return json.dumps(self._outputs)
 
-# Create fresh output collector for each execution
+# Create an output collector for this execution
 output_collector = OutputCollector()
-output_collector._outputs = []  # Reset outputs
 
-# Setup display hook for rich output
 def custom_display_hook(obj):
     if obj is not None:
-        # Convert to string and add as text output
+        # Show the object's repr as text
         output_collector.add_text(repr(obj))
 
 sys.__displayhook__ = custom_display_hook
 
-# Capture any remaining plots on exit
 def cleanup_plots():
     if plt.get_fignums():
         output_collector.add_image()
@@ -90,53 +88,65 @@ def cleanup_plots():
 
 export class PythonRunner {
     private static instance: PythonRunner;
-    private shell: PythonShell | undefined;
+    
+    // We'll store a "globalState" to allow basic retention of variables across runs.
     private globalState: { [key: string]: any } = {};
 
     private constructor() {}
 
-    static getInstance(): PythonRunner {
+    public static getInstance(): PythonRunner {
         if (!PythonRunner.instance) {
             PythonRunner.instance = new PythonRunner();
         }
         return PythonRunner.instance;
     }
 
-    async executeCode(code: string): Promise<CellOutput[]> {
+    /**
+     * Executes `code` in a temporary Python script using the specified `pythonPath`.
+     * 
+     * @param code        The Python code to execute.
+     * @param pythonPath  The interpreter path (e.g., "python3", "/path/to/venv/bin/python").
+     */
+    public async executeCode(code: string, pythonPath: string): Promise<CellOutput[]> {
+        // Provide the pythonPath and ensure unbuffered output
         const options = {
             mode: 'text' as const,
-            pythonPath: 'python3',
-            pythonOptions: ['-u'], // unbuffered output
+            pythonPath,
+            pythonOptions: ['-u']
         };
 
-        // Inject global state into code
+        // Inject our "globalState" into the user code
         const stateInjection = Object.entries(this.globalState)
             .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
             .join('\n');
 
-        // Indent user code for proper Python syntax
-        const indentedCode = code.split('\n').map(line => '        ' + line).join('\n');
+        // We indent the user code so we can wrap it in a try/catch block
+        const indentedCode = code
+            .split('\n')
+            .map((line) => '        ' + line)
+            .join('\n');
 
-        // Wrap user code with setup and state management
+        // This is the final code we put in the temp script
         const wrappedCode = `${PYTHON_SETUP_CODE}
 ${stateInjection}
 
-# Create fresh string buffers for each execution
 stdout = io.StringIO()
 stderr = io.StringIO()
-sys.stdout = stdout  # Ensure print statements are captured
+sys.stdout = stdout
 sys.stderr = stderr
 
 try:
     with redirect_stdout(stdout), redirect_stderr(stderr):
 ${indentedCode}
-        cleanup_plots()  # Capture any remaining plots
+        cleanup_plots()
 except Exception as e:
     output_collector.add_error(e)
 
-# Reset stdout/stderr and add captured output
+# restore stdout/stderr
 sys.stdout = sys.__stdout__
 sys.stderr = sys.__stderr__
+
+# Collect any leftover prints
 stdout_content = stdout.getvalue()
 stderr_content = stderr.getvalue()
 if stdout_content.strip():
@@ -144,123 +154,141 @@ if stdout_content.strip():
 if stderr_content.strip():
     output_collector.add_text(stderr_content, 'stderr')
 
-# Update global state
+# Attempt to gather updated locals into a JSON-friendly dict
 state_dict = {}
-locals_copy = dict(locals().items())  # Create a copy of locals
+locals_copy = dict(locals().items())
 
 def is_json_serializable(obj):
-    """Check if an object is JSON serializable and contains only simple types."""
     try:
-        # Try to create a deep copy to break circular references
+        import copy
         obj_copy = copy.deepcopy(obj)
-        # Try to serialize the copy
+        import json
         json.dumps(obj_copy)
         return True
     except:
         return False
 
 for key, value in locals_copy.items():
-    # Skip internal Python objects and non-serializable values
-    if (not key.startswith('_') and 
-        not callable(value) and 
-        not isinstance(value, (type, types.ModuleType))):
+    if not key.startswith('_') and not callable(value) and not isinstance(value, (type, types.ModuleType)):
         try:
-            # Try to create a deep copy to break circular references
+            import copy
+            import json
             value_copy = copy.deepcopy(value)
-            # Try to serialize the copy
             json.dumps(value_copy)
             state_dict[key] = value_copy
         except:
-            pass  # Skip values that can't be copied or serialized
+            pass
 
 print("STATE:", json.dumps(state_dict))
-print("OUTPUTS:", output_collector.get_outputs())`;
+print("OUTPUTS:", output_collector.get_outputs())
+`;
 
         try {
-            return new Promise<CellOutput[]>((resolve, reject) => {
+            return await new Promise<CellOutput[]>((resolve) => {
                 let outputs: CellOutput[] = [];
                 let newState = {};
 
-                // Create a temporary script file
-                // Create temp file in the OS temporary directory
+                // We'll create a temporary .py script, write the wrapped code, then run it
                 const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
                 const scriptPath = path.join(tmpDir, `mdrun_temp_${Date.now()}.py`);
-                console.log('Creating temporary script at:', scriptPath);
                 fs.writeFileSync(scriptPath, wrappedCode);
-                console.log('Executing Python code...');
+
                 const pyshell = new PythonShell(scriptPath, options);
 
-                pyshell.on('stderr', (err) => {
-                    console.error('Python stderr:', err);
+                pyshell.on('stderr', (stderrLine: string) => {
+                    // If there is any direct stderr line from Python Shell 
+                    console.error('Python stderr:', stderrLine);
                 });
 
                 pyshell.on('message', (message: string) => {
-                    console.log('Python message:', message);
-                    if (!message.trim()) return;  // Skip empty messages
+                    if (!message.trim()) return;
+                    
+                    // The script prints two special lines:
+                    //   "STATE: {...}" and "OUTPUTS: [...]"
                     if (message.startsWith('STATE:')) {
+                        const jsonStr = message.slice(6).trim();
                         try {
-                            const stateData = JSON.parse(message.slice(6));
-                            newState = { ...this.globalState, ...stateData };
+                            const parsed = JSON.parse(jsonStr);
+                            newState = { ...this.globalState, ...parsed };
                         } catch (e) {
-                            console.error('Failed to parse state:', e);
+                            console.error('Failed to parse STATE JSON:', e);
                         }
                     } else if (message.startsWith('OUTPUTS:')) {
+                        const jsonStr = message.slice(8).trim();
                         try {
-                            outputs = JSON.parse(message.slice(8));
+                            outputs = JSON.parse(jsonStr);
                         } catch (e) {
-                            console.error('Failed to parse outputs:', e);
+                            console.error('Failed to parse OUTPUTS JSON:', e);
                         }
+                    } else {
+                        // Some other line that doesn't match STATE or OUTPUTS
+                        console.log('Python message:', message);
                     }
                 });
 
-                pyshell.on('error', (error: Error) => {
-                    console.error('Python error:', error);
-                    resolve([{
-                        type: 'error' as const,
-                        timestamp: Date.now(),
-                        error: error.message,
-                        traceback: []
-                    }]);
+                pyshell.on('error', (err) => {
+                    console.error('PythonShell error:', err);
+                    // Return an error output
+                    resolve([
+                        {
+                            type: 'error',
+                            timestamp: Date.now(),
+                            error: err.message,
+                            traceback: []
+                        }
+                    ]);
                 });
 
+                // When done, remove temp file and update global state
                 pyshell.on('close', () => {
-                    // Clean up temporary file
                     try {
                         fs.unlinkSync(scriptPath);
-                    } catch (e) {
-                        console.error('Failed to delete temporary script:', e);
+                    } catch (unlinkErr) {
+                        console.error('Failed to delete temp script:', unlinkErr);
                     }
+                    // Update global state with new variables
                     this.globalState = newState;
                     resolve(outputs);
                 });
 
+                // If something else ends the shell
                 pyshell.end((err: Error | null) => {
                     if (err) {
-                        resolve([{
-                            type: 'error' as const,
-                            timestamp: Date.now(),
-                            error: err.message,
-                            traceback: []
-                        }]);
+                        resolve([
+                            {
+                                type: 'error',
+                                timestamp: Date.now(),
+                                error: err.message,
+                                traceback: []
+                            }
+                        ]);
                     }
                 });
             });
-        } catch (error: unknown) {
+        } catch (error: any) {
             console.error('Failed to execute Python code:', error);
-            return [{
-                type: 'error' as const,
-                timestamp: Date.now(),
-                error: error instanceof Error ? error.message : String(error),
-                traceback: []
-            }];
+            return [
+                {
+                    type: 'error',
+                    timestamp: Date.now(),
+                    error: error.message || String(error),
+                    traceback: []
+                }
+            ];
         }
     }
 
-    getGlobalState(): { [key: string]: any } {
-        return { ...this.globalState };
+    /**
+     * Clears stored global state so that next code run starts fresh.
+     */
+    public clearState(): void {
+        this.globalState = {};
     }
 
-    clearState(): void {
-        this.globalState = {};
+    /**
+     * Optional: retrieve the current state for debugging or other uses.
+     */
+    public getGlobalState(): { [key: string]: any } {
+        return { ...this.globalState };
     }
 }
