@@ -60,97 +60,17 @@ async function executeNodeCode(code: string): Promise<string> {
 export function activate(context: vscode.ExtensionContext) {
     console.log('Markdown Code Runner is now active');
 
-    const runNextBlockCmd = vscode.commands.registerCommand('mdrun.runNextBlock', runNextBlockHandler);
     const startSessionCmd = vscode.commands.registerCommand('mdrun.startSession', startSessionHandler);
     const runBlockCmd = vscode.commands.registerCommand('mdrun.runBlock', runBlockHandler);
-
-    // New command to terminate execution  // <-- Added
     const terminateBlockCmd = vscode.commands.registerCommand('mdrun.terminateBlock', terminateBlockHandler);
 
     // Register commands and CodeLens provider
-    context.subscriptions.push(runNextBlockCmd, startSessionCmd, runBlockCmd, terminateBlockCmd);
+    context.subscriptions.push(startSessionCmd, runBlockCmd, terminateBlockCmd);
     context.subscriptions.push(
         vscode.languages.registerCodeLensProvider('markdown', new MarkdownCodeLensProvider())
     );
 }
 
-async function runNextBlockHandler() {
-    if (!sessionState) {
-        vscode.window.showErrorMessage('No active code execution session');
-        return;
-    }
-
-    const blockCount = sessionState.codeBlocks.size;
-    if (sessionState.currentBlockIndex >= blockCount) {
-        vscode.window.showInformationMessage('All code blocks executed');
-        return;
-    }
-
-    // Get all blocks sorted by position
-    const sortedBlocks = Array.from(sessionState.codeBlocks.values())
-        .sort((a, b) => a.position - b.position);
-    
-    const currentBlock = sortedBlocks[sessionState.currentBlockIndex];
-    if (!currentBlock) {
-        return;
-    }
-
-    // Update block metadata to running state
-    currentBlock.metadata = {
-        ...currentBlock.metadata,
-        status: 'running',
-        timestamp: Date.now()
-    };
-
-    // Bump the runCount so we label "output [x]"   // <-- Added
-    sessionState.runCount++;
-    currentBlock.metadata.runNumber = sessionState.runCount;
-
-    // Generate block ID based on position
-    const blockId = `block-${currentBlock.position}`;
-
-    // Attempt to run
-    try {
-        if (currentBlock.info === 'python') {
-            // Run with Python
-            const outputs = await PythonRunner.getInstance().executeCode(currentBlock.content, selectedPythonPath);
-            currentBlock.outputs = outputs;
-            currentBlock.metadata.status = 'success';
-        } else if (currentBlock.info === 'javascript') {
-            // Run with Node
-            const result = await executeNodeCode(currentBlock.content);
-            currentBlock.outputs = [{
-                type: 'text',
-                timestamp: Date.now(),
-                content: result,
-                stream: 'stdout'
-            }];
-            currentBlock.metadata.status = 'success';
-        }
-    } catch (error) {
-        const errStr = error instanceof Error ? error.message : String(error);
-        currentBlock.outputs = [{
-            type: 'error',
-            timestamp: Date.now(),
-            error: errStr,
-            traceback: []
-        }];
-        currentBlock.metadata.status = 'error';
-    } finally {
-        // If we stored a running process for this block, remove it
-        runningProcesses.delete(blockId);
-    }
-
-    currentBlock.metadata.executionTime = Date.now() - currentBlock.metadata.timestamp;
-    sessionState.codeBlocks.set(blockId, currentBlock);
-    updatePanel();
-    sessionState.currentBlockIndex++;
-
-    // If we've executed all blocks, reset the index
-    if (sessionState.currentBlockIndex >= sortedBlocks.length) {
-        sessionState.currentBlockIndex = 0;
-    }
-}
 
 // enture envs options are always there
 async function ensurePanelAndEnvs() {
@@ -267,7 +187,7 @@ async function runBlockHandler(range: vscode.Range) {
 
 // Run a single code block
 async function runSingleCodeBlock(code: string, position: number, env: string) {
-    
+
     await ensurePanelAndEnvs();
 
     // Create or get block execution
@@ -467,7 +387,6 @@ function extractCodeBlocks(tokens: any[]): CodeBlock[] {
         if (
             token.type === 'fence' &&
             // We only track recognized fences: "python" or "javascript" 
-            // (Feel free to extend to e.g. "js", "node", etc.)
             (token.info.trim() === 'python' || token.info.trim() === 'javascript') &&
             token.map
         ) {

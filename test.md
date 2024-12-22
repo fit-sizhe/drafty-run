@@ -42,6 +42,19 @@ print(f"y is {y}")
 1/0
 ```
 
+## Stream Output Test
+```python
+import time
+
+# This should show output gradually
+for i in range(5):
+    print(f"Processing step {i+1}...", flush=True)
+    time.sleep(1)  # Simulate some work being done
+    print(f"Step {i+1} complete!", flush=True)
+
+print("\nAll processing complete!")
+```
+
 ## Rich Output Test
 ```python
 import pandas as pd
