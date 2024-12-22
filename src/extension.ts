@@ -1,3 +1,4 @@
+//////////////////// <extension.ts> ////////////////////
 import * as vscode from 'vscode';
 import * as MarkdownIt from 'markdown-it';
 import { exec } from 'child_process';
@@ -17,15 +18,16 @@ let nodeGlobalState: { [key: string]: any } = {};
 interface SessionState {
     codeBlocks: Map<string, CodeBlockExecution>;
     currentBlockIndex: number;
+    runCount: number; // <-- Added
 }
 let sessionState: SessionState | undefined = undefined;
 
-let selectedEnvironment: 'python' | 'node' | undefined = undefined;
-// The Python interpreter path to use when running Python code.
 let selectedPythonPath: string = 'python3';
-
-// Our dynamically discovered Python environments (for the dropdown)
 let discoveredEnvironments: { label: string; path: string }[] = [];
+
+// Keep track of running processes to allow termination.  // <-- Added
+// Key = blockId, Value = child process or something that can be killed
+const runningProcesses: Map<string, any> = new Map();
 
 // ---------------------------------------------
 // Node.js Execution
@@ -62,8 +64,11 @@ export function activate(context: vscode.ExtensionContext) {
     const startSessionCmd = vscode.commands.registerCommand('mdrun.startSession', startSessionHandler);
     const runBlockCmd = vscode.commands.registerCommand('mdrun.runBlock', runBlockHandler);
 
+    // New command to terminate execution  // <-- Added
+    const terminateBlockCmd = vscode.commands.registerCommand('mdrun.terminateBlock', terminateBlockHandler);
+
     // Register commands and CodeLens provider
-    context.subscriptions.push(runNextBlockCmd, startSessionCmd, runBlockCmd);
+    context.subscriptions.push(runNextBlockCmd, startSessionCmd, runBlockCmd, terminateBlockCmd);
     context.subscriptions.push(
         vscode.languages.registerCodeLensProvider('markdown', new MarkdownCodeLensProvider())
     );
@@ -92,19 +97,27 @@ async function runNextBlockHandler() {
 
     // Update block metadata to running state
     currentBlock.metadata = {
+        ...currentBlock.metadata,
         status: 'running',
         timestamp: Date.now()
     };
 
+    // Bump the runCount so we label "output [x]"   // <-- Added
+    sessionState.runCount++;
+    currentBlock.metadata.runNumber = sessionState.runCount;
+
     // Generate block ID based on position
     const blockId = `block-${currentBlock.position}`;
 
+    // Attempt to run
     try {
-        if (selectedEnvironment === 'python') {
+        if (currentBlock.info === 'python') {
+            // Run with Python
             const outputs = await PythonRunner.getInstance().executeCode(currentBlock.content, selectedPythonPath);
             currentBlock.outputs = outputs;
             currentBlock.metadata.status = 'success';
-        } else if (selectedEnvironment === 'node') {
+        } else if (currentBlock.info === 'javascript') {
+            // Run with Node
             const result = await executeNodeCode(currentBlock.content);
             currentBlock.outputs = [{
                 type: 'text',
@@ -123,6 +136,9 @@ async function runNextBlockHandler() {
             traceback: []
         }];
         currentBlock.metadata.status = 'error';
+    } finally {
+        // If we stored a running process for this block, remove it
+        runningProcesses.delete(blockId);
     }
 
     currentBlock.metadata.executionTime = Date.now() - currentBlock.metadata.timestamp;
@@ -136,34 +152,9 @@ async function runNextBlockHandler() {
     }
 }
 
-async function startSessionHandler() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || editor.document.languageId !== 'markdown') {
-        vscode.window.showErrorMessage('Please open a Markdown file first');
-        return;
-    }
-
-    // Prompt: python or node?
-    if (!selectedEnvironment) {
-        const pick = await vscode.window.showQuickPick(['python', 'node'], {
-            placeHolder: 'Select execution environment'
-        });
-        if (!pick) {
-            return;
-        }
-        selectedEnvironment = pick as 'python' | 'node';
-    }
-
-    // If user picks python, gather available environments
-    if (selectedEnvironment === 'python') {
-        discoveredEnvironments = await gatherPythonEnvironments();
-        // If we found any envs, let's default to the first, or fallback to "python3"
-        if (discoveredEnvironments.length > 0) {
-            selectedPythonPath = discoveredEnvironments[0].path;
-        }
-    }
-
-    // Create and show the webview if not open
+// enture envs options are always there
+async function ensurePanelAndEnvs() {
+    // If the panel doesn't exist, create it & set up environment discovery
     if (!currentPanel) {
         currentPanel = vscode.window.createWebviewPanel(
             'codeResults',
@@ -175,7 +166,13 @@ async function startSessionHandler() {
             }
         );
 
-        // Listen for messages (e.g. environment changes)
+        // Gather Python environments
+        discoveredEnvironments = await gatherPythonEnvironments();
+        if (discoveredEnvironments.length > 0) {
+            selectedPythonPath = discoveredEnvironments[0].path;
+        }
+
+        // Set up message listener, dispose handler, etc.:
         currentPanel.webview.onDidReceiveMessage((message) => {
             if (message.command === 'changeEnv') {
                 selectedPythonPath = message.pythonPath;
@@ -183,15 +180,27 @@ async function startSessionHandler() {
             }
         });
 
-        // Cleanup
         currentPanel.onDidDispose(() => {
             currentPanel = undefined;
             nodeGlobalState = {};
-            selectedEnvironment = undefined;
             sessionState = undefined;
             PythonRunner.getInstance().clearState();
+            runningProcesses.clear();
         });
     }
+}
+
+// ---------------------------------------------
+// Start session: parse code blocks & detect environment from fence
+// ---------------------------------------------
+async function startSessionHandler() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'markdown') {
+        vscode.window.showErrorMessage('Please open a Markdown file first');
+        return;
+    }
+
+    await ensurePanelAndEnvs();
 
     // Parse out code blocks from the markdown
     const markdown = editor.document.getText();
@@ -207,7 +216,7 @@ async function startSessionHandler() {
             ...block,
             metadata: {
                 status: 'pending',
-                timestamp: Date.now()
+                timestamp: Date.now(),
             },
             outputs: []
         });
@@ -215,7 +224,8 @@ async function startSessionHandler() {
 
     sessionState = {
         codeBlocks: blockMap,
-        currentBlockIndex: 0
+        currentBlockIndex: 0,
+        runCount: 0
     };
 
     updatePanel();
@@ -230,74 +240,64 @@ async function runBlockHandler(range: vscode.Range) {
     let code = editor.document.getText(range);
     // Remove the Markdown fence lines:
     code = code.replace(/^```[\w\-]*\s*|```$/gm, '');
-    await runSingleCodeBlock(code, range.start.line);
+
+    // look up the fence info (the environment) ourselves
+    const text = editor.document.getText();
+    const md = new MarkdownIt();
+    const tokens = md.parse(text, {});
+    let env: string | undefined;
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.type === 'fence' && t.map) {
+            const [startLine, endLine] = t.map;
+            if (startLine === range.start.line && endLine === range.end.line + 1) {
+                env = t.info.trim();
+                break;
+            }
+        }
+    }
+
+    // If the environment is python/javscript, we pass it along. Otherwise fallback.
+    if (!env) {
+        env = ''; 
+    }
+
+    await runSingleCodeBlock(code, range.start.line, env);
 }
 
 // Run a single code block
-async function runSingleCodeBlock(code: string, position: number) {
-    // If no panel, open it
-    if (!currentPanel) {
-        currentPanel = vscode.window.createWebviewPanel(
-            'codeResults',
-            'Code Execution Results',
-            vscode.ViewColumn.Beside,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true
-            }
-        );
-        // Same event listener
-        currentPanel.webview.onDidReceiveMessage((message) => {
-            if (message.command === 'changeEnv') {
-                selectedPythonPath = message.pythonPath;
-                vscode.window.showInformationMessage(`Switched to: ${selectedPythonPath}`);
-            }
-        });
-        currentPanel.onDidDispose(() => {
-            currentPanel = undefined;
-            nodeGlobalState = {};
-            selectedEnvironment = undefined;
-            sessionState = undefined;
-            PythonRunner.getInstance().clearState();
-        });
-    }
-
-    // If no environment chosen, ask
-    if (!selectedEnvironment) {
-        const pick = await vscode.window.showQuickPick(['python', 'node'], {
-            placeHolder: 'Select execution environment'
-        });
-        if (!pick) {
-            return;
-        }
-        selectedEnvironment = pick as 'python' | 'node';
-
-        if (selectedEnvironment === 'python') {
-            discoveredEnvironments = await gatherPythonEnvironments();
-            if (discoveredEnvironments.length > 0) {
-                selectedPythonPath = discoveredEnvironments[0].path;
-            }
-        }
-    }
+async function runSingleCodeBlock(code: string, position: number, env: string) {
+    
+    await ensurePanelAndEnvs();
 
     // Create or get block execution
-    const blockId = !sessionState ? 'single-block' : `block-${sessionState.currentBlockIndex}`;
+    const blockId = !sessionState ? 'single-block' : `block-${position}`;
+
+    // If we have a session, increment the runCount
+    let runNumber = 1;
+    if (sessionState) {
+        sessionState.runCount++;
+        runNumber = sessionState.runCount;
+    }
 
     const blockExecution: CodeBlockExecution = {
         content: code,
-        info: selectedEnvironment || '',
+        info: env,
         position: position,
         metadata: {
             status: 'running',
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            runNumber: runNumber,  // <-- Added
         },
         outputs: []
     };
 
+    // Attempt to run
     try {
-        if (selectedEnvironment === 'python') {
+        if (env === 'python') {
             blockExecution.outputs = await PythonRunner.getInstance().executeCode(code, selectedPythonPath);
-        } else {
+            blockExecution.metadata.status = 'success';
+        } else if (env === 'javascript') {
             const result = await executeNodeCode(code);
             blockExecution.outputs = [{
                 type: 'text',
@@ -305,8 +305,17 @@ async function runSingleCodeBlock(code: string, position: number) {
                 content: result,
                 stream: 'stdout'
             }];
+            blockExecution.metadata.status = 'success';
+        } else {
+            // Fallback or unknown fence type
+            blockExecution.outputs = [{
+                type: 'text',
+                timestamp: Date.now(),
+                content: `Unknown environment: "${env}". Skipped.`,
+                stream: 'stderr'
+            }];
+            blockExecution.metadata.status = 'error';
         }
-        blockExecution.metadata.status = 'success';
     } catch (error) {
         const errStr = error instanceof Error ? error.message : String(error);
         blockExecution.outputs = [{
@@ -316,6 +325,9 @@ async function runSingleCodeBlock(code: string, position: number) {
             traceback: []
         }];
         blockExecution.metadata.status = 'error';
+    } finally {
+        // Remove from running processes if needed
+        runningProcesses.delete(blockId);
     }
 
     blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
@@ -324,7 +336,8 @@ async function runSingleCodeBlock(code: string, position: number) {
     if (!sessionState) {
         sessionState = {
             codeBlocks: new Map(),
-            currentBlockIndex: 0
+            currentBlockIndex: 0,
+            runCount: 1, // we used runNumber=1 above
         };
     }
 
@@ -332,6 +345,29 @@ async function runSingleCodeBlock(code: string, position: number) {
     const positionBlockId = `block-${position}`;
     sessionState.codeBlocks.set(positionBlockId, blockExecution);
     updatePanel();
+}
+
+// ---------------------------------------------
+// Terminate a running block
+// ---------------------------------------------
+function terminateBlockHandler(range: vscode.Range) {
+    if (!sessionState) {
+        vscode.window.showErrorMessage('No session running to terminate a block.');
+        return;
+    }
+    const blockId = `block-${range.start.line}`;
+    if (!runningProcesses.has(blockId)) {
+        vscode.window.showInformationMessage('No running process found for this block.');
+        return;
+    }
+    try {
+        const processToKill = runningProcesses.get(blockId);
+        processToKill?.kill?.(); // Attempt to kill
+        runningProcesses.delete(blockId);
+        vscode.window.showInformationMessage(`Terminated execution of block at line ${range.start.line}.`);
+    } catch (err) {
+        vscode.window.showErrorMessage(`Failed to terminate block: ${String(err)}`);
+    }
 }
 
 // ---------------------------------------------
@@ -395,27 +431,18 @@ function listCondaEnvs(): Promise<{ label: string; path: string }[]> {
             try {
                 const data = JSON.parse(stdout);
                 if (Array.isArray(data.envs)) {
-                    // data.envs is an array of absolute paths to each env
-                    // e.g. "/Users/you/miniconda3/envs/myenv"
                     const results: { label: string; path: string }[] = [];
                     for (const envPath of data.envs) {
-                        // We'll parse the env name from the folder name
-                        // e.g. "myenv" from ".../envs/myenv"
                         const envName = path.basename(envPath);
                         const label = `conda: ${envName}`;
-
-                        // On Unix, the python binary is typically at <envPath>/bin/python
-                        // If it doesn't exist, maybe we're on Windows, so fallback to something else.
                         const pyBin = path.join(envPath, 'bin', 'python');
                         if (fs.existsSync(pyBin)) {
                             results.push({ label, path: pyBin });
                         } else {
-                            // On Windows, it might be <envPath>\\python.exe
                             const winBin = path.join(envPath, 'python.exe');
                             if (fs.existsSync(winBin)) {
                                 results.push({ label, path: winBin });
                             } else {
-                                // Fallback if we can't detect the binary
                                 results.push({ label, path: envPath });
                             }
                         }
@@ -430,9 +457,8 @@ function listCondaEnvs(): Promise<{ label: string; path: string }[]> {
     });
 }
 
-
 // ---------------------------------------------
-// Extract code blocks for chosen environment
+// Extract code blocks that are either python or javascript
 // ---------------------------------------------
 function extractCodeBlocks(tokens: any[]): CodeBlock[] {
     const blocks: CodeBlock[] = [];
@@ -440,12 +466,14 @@ function extractCodeBlocks(tokens: any[]): CodeBlock[] {
         const token = tokens[i];
         if (
             token.type === 'fence' &&
-            (token.info === selectedEnvironment || token.info === '') &&
+            // We only track recognized fences: "python" or "javascript" 
+            // (Feel free to extend to e.g. "js", "node", etc.)
+            (token.info.trim() === 'python' || token.info.trim() === 'javascript') &&
             token.map
         ) {
             blocks.push({
                 content: token.content,
-                info: token.info,
+                info: token.info.trim(),
                 position: token.map[0] // Start line of the code block
             });
         }
@@ -464,6 +492,9 @@ function updatePanel(blockMap?: Map<string, CodeBlockExecution>) {
     currentPanel.webview.html = getWebviewContent(blocks);
 }
 
+// ---------------------------------------------
+// IMPORTANT: Now we show "output [x]" in the block header
+// ---------------------------------------------
 function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
     // Build <option> tags from discoveredEnvironments
     const optionsHtml = discoveredEnvironments
@@ -480,7 +511,12 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
             const executionTime = block.metadata.executionTime 
                 ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)` 
                 : '';
-            
+
+            // Instead of status text like "success", we show "output [runNumber]"
+            const runLabel = block.metadata.runNumber
+                ? `Output [${block.metadata.runNumber}]`
+                : 'Output [?]';
+
             const outputsHtml = block.outputs
                 .map((output) => {
                     switch (output.type) {
@@ -503,7 +539,11 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
                         case 'rich':
                             return `
                                 <div class="output rich-output">
-                                    ${output.format === 'html' ? output.content : escapeHtml(output.content)}
+                                    ${
+                                        output.format === 'html' 
+                                            ? output.content 
+                                            : escapeHtml(output.content)
+                                    }
                                 </div>`;
                         default:
                             return '';
@@ -514,7 +554,7 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
             return `
                 <div class="block-container ${statusClass}">
                     <div class="block-header">
-                        <span class="status">${block.metadata.status}</span>
+                        <span class="status">${runLabel}</span>
                         <span class="time">${executionTime}</span>
                     </div>
                     <div class="block-outputs">
@@ -603,12 +643,11 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
 <body>
     <div class="env-picker">
         ${
-            selectedEnvironment === 'python'
-                ? `
-                    <label for="envSelect"><strong>Python Interpreter:</strong></label>
-                    <select id="envSelect">${optionsHtml}</select>
-                `
-                : ''
+            // We'll still show the Python environment picker if the user wants to switch interpreters
+            `
+            <label for="envSelect"><strong>Python Interpreter:</strong></label>
+            <select id="envSelect">${optionsHtml}</select>
+            `
         }
     </div>
 
@@ -644,16 +683,16 @@ function escapeHtml(unsafe: string): string {
 // ---------------------------------------------
 export function deactivate() {
     nodeGlobalState = {};
-    selectedEnvironment = undefined;
     sessionState = undefined;
     if (currentPanel) {
         currentPanel.dispose();
     }
     PythonRunner.getInstance().clearState();
+    runningProcesses.clear();
 }
 
 // ---------------------------------------------
-// CodeLens: "Run Code Block"
+// CodeLens: "Run Code Block" + "Terminate Execution"  // <-- Modified
 // ---------------------------------------------
 class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
     public provideCodeLenses(
@@ -670,12 +709,22 @@ class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
             if (token.type === 'fence' && token.map) {
                 const [startLine, endLine] = token.map; // endLine is exclusive
                 const range = new vscode.Range(startLine, 0, endLine - 1, 0);
-                const cmd: vscode.Command = {
+
+                // 1) Run code block
+                const runCmd: vscode.Command = {
                     title: '▶ Run Code Block',
                     command: 'mdrun.runBlock',
                     arguments: [range]
                 };
-                codeLenses.push(new vscode.CodeLens(range, cmd));
+                codeLenses.push(new vscode.CodeLens(range, runCmd));
+
+                // 2) Terminate code block
+                const termCmd: vscode.Command = {
+                    title: '✖ Terminate Execution',
+                    command: 'mdrun.terminateBlock',
+                    arguments: [range]
+                };
+                codeLenses.push(new vscode.CodeLens(range, termCmd));
             }
         }
         return codeLenses;

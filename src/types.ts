@@ -50,6 +50,7 @@ export interface ExecutionMetadata {
     executionTime?: number;
     status: 'pending' | 'running' | 'success' | 'error';
     timestamp: number;
+    runNumber?: number;
 }
 
 export interface CodeBlockExecution extends CodeBlock {

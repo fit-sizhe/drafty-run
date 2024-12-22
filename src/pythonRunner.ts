@@ -1,5 +1,3 @@
-// pythonRunner.ts
-
 import { PythonShell } from 'python-shell';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -103,12 +101,8 @@ export class PythonRunner {
 
     /**
      * Executes `code` in a temporary Python script using the specified `pythonPath`.
-     * 
-     * @param code        The Python code to execute.
-     * @param pythonPath  The interpreter path (e.g., "python3", "/path/to/venv/bin/python").
      */
     public async executeCode(code: string, pythonPath: string): Promise<CellOutput[]> {
-        // Provide the pythonPath and ensure unbuffered output
         const options = {
             mode: 'text' as const,
             pythonPath,
@@ -120,13 +114,13 @@ export class PythonRunner {
             .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
             .join('\n');
 
-        // We indent the user code so we can wrap it in a try/catch block
+        // Indent user code
         const indentedCode = code
             .split('\n')
             .map((line) => '        ' + line)
             .join('\n');
 
-        // This is the final code we put in the temp script
+        // Final code
         const wrappedCode = `${PYTHON_SETUP_CODE}
 ${stateInjection}
 
@@ -154,7 +148,7 @@ if stdout_content.strip():
 if stderr_content.strip():
     output_collector.add_text(stderr_content, 'stderr')
 
-# Attempt to gather updated locals into a JSON-friendly dict
+# Attempt to gather updated locals
 state_dict = {}
 locals_copy = dict(locals().items())
 
@@ -188,23 +182,24 @@ print("OUTPUTS:", output_collector.get_outputs())
                 let outputs: CellOutput[] = [];
                 let newState = {};
 
-                // We'll create a temporary .py script, write the wrapped code, then run it
+                // Create a temporary .py script
                 const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
                 const scriptPath = path.join(tmpDir, `mdrun_temp_${Date.now()}.py`);
                 fs.writeFileSync(scriptPath, wrappedCode);
 
                 const pyshell = new PythonShell(scriptPath, options);
 
+                // If you want to store this pyshell globally for termination, you could:
+                // runningProcesses.set(blockId, pyshell) 
+                // But you'll need a reference to blockId from your extension code.
+
                 pyshell.on('stderr', (stderrLine: string) => {
-                    // If there is any direct stderr line from Python Shell 
                     console.error('Python stderr:', stderrLine);
                 });
 
                 pyshell.on('message', (message: string) => {
                     if (!message.trim()) return;
                     
-                    // The script prints two special lines:
-                    //   "STATE: {...}" and "OUTPUTS: [...]"
                     if (message.startsWith('STATE:')) {
                         const jsonStr = message.slice(6).trim();
                         try {
@@ -221,14 +216,12 @@ print("OUTPUTS:", output_collector.get_outputs())
                             console.error('Failed to parse OUTPUTS JSON:', e);
                         }
                     } else {
-                        // Some other line that doesn't match STATE or OUTPUTS
                         console.log('Python message:', message);
                     }
                 });
 
                 pyshell.on('error', (err) => {
                     console.error('PythonShell error:', err);
-                    // Return an error output
                     resolve([
                         {
                             type: 'error',
@@ -239,19 +232,16 @@ print("OUTPUTS:", output_collector.get_outputs())
                     ]);
                 });
 
-                // When done, remove temp file and update global state
                 pyshell.on('close', () => {
                     try {
                         fs.unlinkSync(scriptPath);
                     } catch (unlinkErr) {
                         console.error('Failed to delete temp script:', unlinkErr);
                     }
-                    // Update global state with new variables
                     this.globalState = newState;
                     resolve(outputs);
                 });
 
-                // If something else ends the shell
                 pyshell.end((err: Error | null) => {
                     if (err) {
                         resolve([
@@ -278,16 +268,10 @@ print("OUTPUTS:", output_collector.get_outputs())
         }
     }
 
-    /**
-     * Clears stored global state so that next code run starts fresh.
-     */
     public clearState(): void {
         this.globalState = {};
     }
 
-    /**
-     * Optional: retrieve the current state for debugging or other uses.
-     */
     public getGlobalState(): { [key: string]: any } {
         return { ...this.globalState };
     }
