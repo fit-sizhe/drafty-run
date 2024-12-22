@@ -36,6 +36,7 @@ export type CellOutput = TextOutput | ImageOutput | ErrorOutput | RichOutput;
 export interface CodeBlock {
     content: string;
     info: string;
+    position: number;  // Line number in document where block starts
 }
 
 export interface ExecutionState {

@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { PythonRunner } from './pythonRunner';
-import { CellOutput, CodeBlock, CodeBlockExecution } from './types';
+import { CodeBlock, CodeBlockExecution } from './types';
 
 // ---------------------------------------------
 // Global/Session State
@@ -81,8 +81,11 @@ async function runNextBlockHandler() {
         return;
     }
 
-    const blockId = `block-${sessionState.currentBlockIndex}`;
-    const currentBlock = sessionState.codeBlocks.get(blockId);
+    // Get all blocks sorted by position
+    const sortedBlocks = Array.from(sessionState.codeBlocks.values())
+        .sort((a, b) => a.position - b.position);
+    
+    const currentBlock = sortedBlocks[sessionState.currentBlockIndex];
     if (!currentBlock) {
         return;
     }
@@ -92,6 +95,9 @@ async function runNextBlockHandler() {
         status: 'running',
         timestamp: Date.now()
     };
+
+    // Generate block ID based on position
+    const blockId = `block-${currentBlock.position}`;
 
     try {
         if (selectedEnvironment === 'python') {
@@ -123,6 +129,11 @@ async function runNextBlockHandler() {
     sessionState.codeBlocks.set(blockId, currentBlock);
     updatePanel();
     sessionState.currentBlockIndex++;
+
+    // If we've executed all blocks, reset the index
+    if (sessionState.currentBlockIndex >= sortedBlocks.length) {
+        sessionState.currentBlockIndex = 0;
+    }
 }
 
 async function startSessionHandler() {
@@ -190,8 +201,8 @@ async function startSessionHandler() {
 
     // Initialize session with a Map to track block executions
     const blockMap = new Map<string, CodeBlockExecution>();
-    codeBlocks.forEach((block, index) => {
-        const blockId = `block-${index}`;
+    codeBlocks.forEach((block) => {
+        const blockId = `block-${block.position}`;
         blockMap.set(blockId, {
             ...block,
             metadata: {
@@ -219,11 +230,11 @@ async function runBlockHandler(range: vscode.Range) {
     let code = editor.document.getText(range);
     // Remove the Markdown fence lines:
     code = code.replace(/^```[\w\-]*\s*|```$/gm, '');
-    await runSingleCodeBlock(code);
+    await runSingleCodeBlock(code, range.start.line);
 }
 
 // Run a single code block
-async function runSingleCodeBlock(code: string) {
+async function runSingleCodeBlock(code: string, position: number) {
     // If no panel, open it
     if (!currentPanel) {
         currentPanel = vscode.window.createWebviewPanel(
@@ -271,9 +282,11 @@ async function runSingleCodeBlock(code: string) {
 
     // Create or get block execution
     const blockId = !sessionState ? 'single-block' : `block-${sessionState.currentBlockIndex}`;
+
     const blockExecution: CodeBlockExecution = {
         content: code,
         info: selectedEnvironment || '',
+        position: position,
         metadata: {
             status: 'running',
             timestamp: Date.now()
@@ -307,16 +320,18 @@ async function runSingleCodeBlock(code: string) {
 
     blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
 
-    // Update session state if it exists
-    if (sessionState) {
-        sessionState.codeBlocks.set(blockId, blockExecution);
-        updatePanel();
-    } else {
-        // Create a temporary map for single block execution
-        const tempMap = new Map<string, CodeBlockExecution>();
-        tempMap.set(blockId, blockExecution);
-        updatePanel(tempMap);
+    // Create session state if it doesn't exist
+    if (!sessionState) {
+        sessionState = {
+            codeBlocks: new Map(),
+            currentBlockIndex: 0
+        };
     }
+
+    // Generate a unique block ID based on position
+    const positionBlockId = `block-${position}`;
+    sessionState.codeBlocks.set(positionBlockId, blockExecution);
+    updatePanel();
 }
 
 // ---------------------------------------------
@@ -425,11 +440,13 @@ function extractCodeBlocks(tokens: any[]): CodeBlock[] {
         const token = tokens[i];
         if (
             token.type === 'fence' &&
-            (token.info === selectedEnvironment || token.info === '')
+            (token.info === selectedEnvironment || token.info === '') &&
+            token.map
         ) {
             blocks.push({
                 content: token.content,
-                info: token.info
+                info: token.info,
+                position: token.map[0] // Start line of the code block
             });
         }
     }
@@ -457,6 +474,7 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
         .join('');
 
     const outputHtml = Array.from(blocks.values())
+        .sort((a, b) => a.position - b.position) // Sort blocks by position
         .map((block) => {
             const statusClass = `status-${block.metadata.status}`;
             const executionTime = block.metadata.executionTime 
