@@ -29,31 +29,6 @@ let discoveredEnvironments: { label: string; path: string }[] = [];
 const runningProcesses: Map<string, any> = new Map();
 
 // ---------------------------------------------
-// Node.js Execution
-// ---------------------------------------------
-async function executeNodeCode(code: string): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-        try {
-            // Inject global state
-            const stateInjection = Object.entries(nodeGlobalState)
-                .map(([key, value]) => `let ${key} = ${JSON.stringify(value)};`)
-                .join('\n');
-
-            const fullCode = `${stateInjection}\n${code}\n`;
-            const result = eval(fullCode);
-
-            // Attempt to gather updated global state
-            const context = eval(`(${fullCode})\n(() => ({ ...global }))()`);
-            nodeGlobalState = { ...nodeGlobalState, ...context };
-
-            resolve(String(result));
-        } catch (error) {
-            reject(error);
-        }
-    });
-}
-
-// ---------------------------------------------
 // Extension entry points
 // ---------------------------------------------
 export function activate(context: vscode.ExtensionContext) {

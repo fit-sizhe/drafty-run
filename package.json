@@ -20,8 +20,12 @@
         "title": "mdrun: Start Markdown Code Session"
       },
       {
-        "command": "mdrun.runNextBlock",
-        "title": "mdrun: Run Next Code Block"
+        "command": "mdrun.runBlock'",
+        "title": "mdrun: Run Code Block"
+      },
+      {
+        "command": "mdrun.terminateBlock",
+        "title": "mdrun: Terminate Block"
       }
     ]
   },
@@ -34,13 +38,11 @@
   },
   "devDependencies": {
     "@types/glob": "^7.2.0",
-    "@types/isomorphic-fetch": "^0.0.39",
     "@types/markdown-it": "^14.1.2",
     "@types/mocha": "^8.2.3",
     "@types/node": "^14.18.63",
     "@types/uuid": "^10.0.0",
     "@types/vscode": "^1.96.0",
-    "@types/ws": "^8.5.13",
     "@typescript-eslint/eslint-plugin": "^4.33.0",
     "@typescript-eslint/parser": "^4.33.0",
     "eslint": "^7.32.0",
