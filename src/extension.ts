@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { PythonRunner } from './pythonRunner';
-import { CodeBlock, CodeBlockExecution } from './types';
+import { CodeBlock, CodeBlockExecution, CellOutput } from './types';
 
 // ---------------------------------------------
 // Global/Session State
@@ -18,15 +18,14 @@ let nodeGlobalState: { [key: string]: any } = {};
 interface SessionState {
     codeBlocks: Map<string, CodeBlockExecution>;
     currentBlockIndex: number;
-    runCount: number; // <-- Added
+    runCount: number;
 }
 let sessionState: SessionState | undefined = undefined;
 
 let selectedPythonPath: string = 'python3';
 let discoveredEnvironments: { label: string; path: string }[] = [];
 
-// Keep track of running processes to allow termination.  // <-- Added
-// Key = blockId, Value = child process or something that can be killed
+// Keep track of running processes to allow termination.
 const runningProcesses: Map<string, any> = new Map();
 
 // ---------------------------------------------
@@ -71,8 +70,6 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-
-// enture envs options are always there
 async function ensurePanelAndEnvs() {
     // If the panel doesn't exist, create it & set up environment discovery
     if (!currentPanel) {
@@ -149,9 +146,12 @@ async function startSessionHandler() {
     };
 
     updatePanel();
-    vscode.window.showInformationMessage('Session started! Use "Run Next Block" or CodeLens to run code.');
+    vscode.window.showInformationMessage('Session started! Use "Run Code Block" or CodeLens to run code.');
 }
 
+// ---------------------------------------------
+// Run a block
+// ---------------------------------------------
 async function runBlockHandler(range: vscode.Range) {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -161,7 +161,7 @@ async function runBlockHandler(range: vscode.Range) {
     // Remove the Markdown fence lines:
     code = code.replace(/^```[\w\-]*\s*|```$/gm, '');
 
-    // look up the fence info (the environment) ourselves
+    // Look up the fence info (the environment) ourselves
     const text = editor.document.getText();
     const md = new MarkdownIt();
     const tokens = md.parse(text, {});
@@ -177,73 +177,87 @@ async function runBlockHandler(range: vscode.Range) {
         }
     }
 
-    // If the environment is python/javscript, we pass it along. Otherwise fallback.
     if (!env) {
-        env = ''; 
+        env = '';
     }
 
     await runSingleCodeBlock(code, range.start.line, env);
 }
 
-// Run a single code block
+// ---------------------------------------------
+// Run a single code block (with streaming)
+// ---------------------------------------------
 async function runSingleCodeBlock(code: string, position: number, env: string) {
-
     await ensurePanelAndEnvs();
 
-    // Create or get block execution
-    const blockId = !sessionState ? 'single-block' : `block-${position}`;
+    // Generate a block ID
+    const blockId = `block-${position}`;
 
-    // If we have a session, increment the runCount
+    // If we have a session, increment runCount
     let runNumber = 1;
     if (sessionState) {
         sessionState.runCount++;
         runNumber = sessionState.runCount;
     }
 
+    // Create a fresh CodeBlockExecution object
     const blockExecution: CodeBlockExecution = {
         content: code,
         info: env,
-        position: position,
+        position,
         metadata: {
             status: 'running',
             timestamp: Date.now(),
-            runNumber: runNumber,  // <-- Added
+            runNumber: runNumber,
         },
         outputs: []
     };
 
-    // Attempt to run
-    try {
-        if (env === 'python') {
-            blockExecution.outputs = await PythonRunner.getInstance().executeCode(code, selectedPythonPath);
-            blockExecution.metadata.status = 'success';
-        } else if (env === 'javascript') {
-            const result = await executeNodeCode(code);
-            blockExecution.outputs = [{
-                type: 'text',
-                timestamp: Date.now(),
-                content: result,
-                stream: 'stdout'
-            }];
-            blockExecution.metadata.status = 'success';
-        } else {
-            // Fallback or unknown fence type
-            blockExecution.outputs = [{
-                type: 'text',
-                timestamp: Date.now(),
-                content: `Unknown environment: "${env}". Skipped.`,
-                stream: 'stderr'
-            }];
-            blockExecution.metadata.status = 'error';
+    // Put this block in the session state
+    if (!sessionState) {
+        sessionState = {
+            codeBlocks: new Map(),
+            currentBlockIndex: 0,
+            runCount: 1,
+        };
+    }
+    sessionState.codeBlocks.set(blockId, blockExecution);
+
+    // Force a quick update so the panel shows "running" status
+    updatePanel();
+
+    // We'll define a small helper that collects partial output
+    const onPartialOutput = (partialOutput: CellOutput) => {
+        // Push the new output line to the block's outputs
+        const b = sessionState?.codeBlocks.get(blockId);
+        if (!b) {
+            return;
         }
+        b.outputs.push(partialOutput);
+        // Re-render the panel to show partial progress
+        updatePanel();
+    };
+
+    // Actually run the code
+    try {
+        const finalOutputs = await PythonRunner.getInstance().executeCode(
+            code,
+            selectedPythonPath,
+            blockId,
+            onPartialOutput  // <-- pass streaming callback
+        );
+        blockExecution.outputs = finalOutputs;
+        blockExecution.metadata.status = 'success';
     } catch (error) {
         const errStr = error instanceof Error ? error.message : String(error);
-        blockExecution.outputs = [{
-            type: 'error',
-            timestamp: Date.now(),
-            error: errStr,
-            traceback: []
-        }];
+        blockExecution.outputs = [
+            {
+                type: 'error',
+                timestamp: Date.now(),
+                error: errStr,
+                traceback: []
+            }
+        ];
         blockExecution.metadata.status = 'error';
     } finally {
         // Remove from running processes if needed
@@ -251,19 +265,6 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
     }
 
     blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
-
-    // Create session state if it doesn't exist
-    if (!sessionState) {
-        sessionState = {
-            codeBlocks: new Map(),
-            currentBlockIndex: 0,
-            runCount: 1, // we used runNumber=1 above
-        };
-    }
-
-    // Generate a unique block ID based on position
-    const positionBlockId = `block-${position}`;
-    sessionState.codeBlocks.set(positionBlockId, blockExecution);
     updatePanel();
 }
 
@@ -284,6 +285,20 @@ function terminateBlockHandler(range: vscode.Range) {
         const processToKill = runningProcesses.get(blockId);
         processToKill?.kill?.(); // Attempt to kill
         runningProcesses.delete(blockId);
+
+        // Also mark it as error or cancelled
+        const blockExecution = sessionState.codeBlocks.get(blockId);
+        if (blockExecution) {
+            blockExecution.metadata.status = 'error';
+            blockExecution.outputs.push({
+                type: 'text',
+                timestamp: Date.now(),
+                content: 'Execution terminated by user.',
+                stream: 'stderr'
+            });
+        }
+
+        updatePanel();
         vscode.window.showInformationMessage(`Terminated execution of block at line ${range.start.line}.`);
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to terminate block: ${String(err)}`);
@@ -291,7 +306,7 @@ function terminateBlockHandler(range: vscode.Range) {
 }
 
 // ---------------------------------------------
-// Gather python environments via conda + .virtualenvs
+// Gather python environments
 // ---------------------------------------------
 async function gatherPythonEnvironments(): Promise<{ label: string; path: string }[]> {
     const results: { label: string; path: string }[] = [];
@@ -340,7 +355,6 @@ function listVirtualenvs(): { label: string; path: string }[] {
 
 function listCondaEnvs(): Promise<{ label: string; path: string }[]> {
     return new Promise((resolve) => {
-        
         const cmd = `source ~/.zshrc && conda env list --json`;
 
         exec(cmd, { shell: '/bin/zsh' }, (error, stdout, stderr) => {
@@ -386,14 +400,13 @@ function extractCodeBlocks(tokens: any[]): CodeBlock[] {
         const token = tokens[i];
         if (
             token.type === 'fence' &&
-            // We only track recognized fences: "python" or "javascript" 
             (token.info.trim() === 'python' || token.info.trim() === 'javascript') &&
             token.map
         ) {
             blocks.push({
                 content: token.content,
                 info: token.info.trim(),
-                position: token.map[0] // Start line of the code block
+                position: token.map[0]
             });
         }
     }
@@ -403,17 +416,18 @@ function extractCodeBlocks(tokens: any[]): CodeBlock[] {
 // ---------------------------------------------
 // Update the Webview
 // ---------------------------------------------
-function updatePanel(blockMap?: Map<string, CodeBlockExecution>) {
+function updatePanel() {
     if (!currentPanel) {
         return;
     }
-    const blocks = blockMap || (sessionState?.codeBlocks || new Map());
+    const blocks = sessionState?.codeBlocks || new Map();
     currentPanel.webview.html = getWebviewContent(blocks);
 }
 
 // ---------------------------------------------
-// IMPORTANT: Now we show "output [x]" in the block header
+// Webview HTML
 // ---------------------------------------------
+// (Filtering out "pending" blocks so that only executed blocks appear.)
 function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
     // Build <option> tags from discoveredEnvironments
     const optionsHtml = discoveredEnvironments
@@ -423,15 +437,20 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
         })
         .join('');
 
-    const outputHtml = Array.from(blocks.values())
-        .sort((a, b) => a.position - b.position) // Sort blocks by position
+    // Sort by position, but only show blocks that have actually run (status != 'pending')
+    const filteredBlocks = Array.from(blocks.values()).filter(
+        (b) => b.metadata.status !== 'pending'
+    );
+    filteredBlocks.sort((a, b) => a.position - b.position);
+
+    const outputHtml = filteredBlocks
         .map((block) => {
             const statusClass = `status-${block.metadata.status}`;
-            const executionTime = block.metadata.executionTime 
-                ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)` 
+            const executionTime = block.metadata.executionTime
+                ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)`
                 : '';
 
-            // Instead of status text like "success", we show "output [runNumber]"
+            // Instead of a "status" text, show "Output [runNumber]"
             const runLabel = block.metadata.runNumber
                 ? `Output [${block.metadata.runNumber}]`
                 : 'Output [?]';
@@ -460,7 +479,7 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
                                 <div class="output rich-output">
                                     ${
                                         output.format === 'html' 
-                                            ? output.content 
+                                            ? output.content
                                             : escapeHtml(output.content)
                                     }
                                 </div>`;
@@ -561,13 +580,8 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
 </head>
 <body>
     <div class="env-picker">
-        ${
-            // We'll still show the Python environment picker if the user wants to switch interpreters
-            `
-            <label for="envSelect"><strong>Python Interpreter:</strong></label>
-            <select id="envSelect">${optionsHtml}</select>
-            `
-        }
+        <label for="envSelect"><strong>Python Interpreter:</strong></label>
+        <select id="envSelect">${optionsHtml}</select>
     </div>
 
     ${outputHtml}
@@ -598,8 +612,6 @@ function escapeHtml(unsafe: string): string {
 }
 
 // ---------------------------------------------
-// Deactivate
-// ---------------------------------------------
 export function deactivate() {
     nodeGlobalState = {};
     sessionState = undefined;
@@ -611,7 +623,7 @@ export function deactivate() {
 }
 
 // ---------------------------------------------
-// CodeLens: "Run Code Block" + "Terminate Execution"  // <-- Modified
+// CodeLens: "Run Code Block" + "Terminate Execution"
 // ---------------------------------------------
 class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
     public provideCodeLenses(

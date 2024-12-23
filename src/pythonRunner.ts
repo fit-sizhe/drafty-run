@@ -79,6 +79,7 @@ def custom_display_hook(obj):
 sys.__displayhook__ = custom_display_hook
 
 def cleanup_plots():
+    # If there are any active figures, convert them to images
     if plt.get_fignums():
         output_collector.add_image()
         plt.close('all')
@@ -101,12 +102,18 @@ export class PythonRunner {
 
     /**
      * Executes `code` in a temporary Python script using the specified `pythonPath`.
+     * Allows partial streaming by calling onDataCallback with text lines as they arrive.
      */
-    public async executeCode(code: string, pythonPath: string): Promise<CellOutput[]> {
+    public async executeCode(
+        code: string,
+        pythonPath: string,
+        blockId: string,
+        onDataCallback?: (partialOutput: CellOutput) => void
+    ): Promise<CellOutput[]> {
         const options = {
             mode: 'text' as const,
             pythonPath,
-            pythonOptions: ['-u']
+            pythonOptions: ['-u'] // -u means unbuffered (helps streaming)
         };
 
         // Inject our "globalState" into the user code
@@ -152,16 +159,6 @@ if stderr_content.strip():
 state_dict = {}
 locals_copy = dict(locals().items())
 
-def is_json_serializable(obj):
-    try:
-        import copy
-        obj_copy = copy.deepcopy(obj)
-        import json
-        json.dumps(obj_copy)
-        return True
-    except:
-        return False
-
 for key, value in locals_copy.items():
     if not key.startswith('_') and not callable(value) and not isinstance(value, (type, types.ModuleType)):
         try:
@@ -177,51 +174,94 @@ print("STATE:", json.dumps(state_dict))
 print("OUTPUTS:", output_collector.get_outputs())
 `;
 
-        try {
-            return await new Promise<CellOutput[]>((resolve) => {
-                let outputs: CellOutput[] = [];
-                let newState = {};
+        return await new Promise<CellOutput[]>((resolve) => {
+            let outputs: CellOutput[] = [];
+            let newState = {};
 
-                // Create a temporary .py script
-                const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
-                const scriptPath = path.join(tmpDir, `mdrun_temp_${Date.now()}.py`);
-                fs.writeFileSync(scriptPath, wrappedCode);
+            // Create a temporary .py script
+            const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
+            const scriptPath = path.join(tmpDir, `mdrun_temp_${Date.now()}.py`);
+            fs.writeFileSync(scriptPath, wrappedCode);
 
-                const pyshell = new PythonShell(scriptPath, options);
+            const pyshell = new PythonShell(scriptPath, options);
 
-                // If you want to store this pyshell globally for termination, you could:
-                // runningProcesses.set(blockId, pyshell) 
-                // But you'll need a reference to blockId from your extension code.
+            // (Optional) If you want your extension to be able to terminate the process:
+            // e.g. runningProcesses.set(blockId, pyshell)
+            // For now, do it in your extension code; we just expose pyshell here if needed.
 
-                pyshell.on('stderr', (stderrLine: string) => {
-                    console.error('Python stderr:', stderrLine);
-                });
+            pyshell.on('stderr', (stderrLine: string) => {
+                // Streams on stderr come line by line
+                console.error('Python error:', stderrLine);
+                if (onDataCallback) {
+                    onDataCallback({
+                        type: 'text',
+                        timestamp: Date.now(),
+                        content: stderrLine.trimEnd(),
+                        stream: 'stderr'
+                    });
+                }
+            });
 
-                pyshell.on('message', (message: string) => {
-                    if (!message.trim()) return;
-                    
-                    if (message.startsWith('STATE:')) {
-                        const jsonStr = message.slice(6).trim();
-                        try {
-                            const parsed = JSON.parse(jsonStr);
-                            newState = { ...this.globalState, ...parsed };
-                        } catch (e) {
-                            console.error('Failed to parse STATE JSON:', e);
-                        }
-                    } else if (message.startsWith('OUTPUTS:')) {
-                        const jsonStr = message.slice(8).trim();
-                        try {
-                            outputs = JSON.parse(jsonStr);
-                        } catch (e) {
-                            console.error('Failed to parse OUTPUTS JSON:', e);
-                        }
-                    } else {
-                        console.log('Python message:', message);
+            // Each line from stdout is passed to .on('message', ...)
+            // We'll parse "STATE:", "OUTPUTS:", or treat them as partial streaming lines
+            pyshell.on('message', (message: string) => {
+                if (!message.trim()) return;
+
+                if (message.startsWith('STATE:')) {
+                    const jsonStr = message.slice(6).trim();
+                    try {
+                        const parsed = JSON.parse(jsonStr);
+                        newState = { ...this.globalState, ...parsed };
+                    } catch (e) {
+                        console.error('Failed to parse STATE JSON:', e);
                     }
-                });
+                } else if (message.startsWith('OUTPUTS:')) {
+                    const jsonStr = message.slice(8).trim();
+                    try {
+                        outputs = JSON.parse(jsonStr);
+                    } catch (e) {
+                        console.error('Failed to parse OUTPUTS JSON:', e);
+                    }
+                } else {
+                    // Partial line from stdout
+                    if (onDataCallback) {
+                        onDataCallback({
+                            type: 'text',
+                            timestamp: Date.now(),
+                            content: message,
+                            stream: 'stdout'
+                        });
+                    }
+                }
+            });
 
-                pyshell.on('error', (err) => {
-                    console.error('PythonShell error:', err);
+            pyshell.on('error', (err) => {
+                console.error('PythonShell error:', err);
+                resolve([
+                    {
+                        type: 'error',
+                        timestamp: Date.now(),
+                        error: err.message,
+                        traceback: []
+                    }
+                ]);
+            });
+
+            pyshell.on('close', () => {
+                // Remove temp file
+                try {
+                    fs.unlinkSync(scriptPath);
+                } catch (unlinkErr) {
+                    console.error('Failed to delete temp script:', unlinkErr);
+                }
+                // Update global state
+                this.globalState = newState;
+                resolve(outputs);
+            });
+
+            // End the shell. (Sometimes necessary, but can also rely on 'close' event.)
+            pyshell.end((err: Error | null) => {
+                if (err) {
                     resolve([
                         {
                             type: 'error',
@@ -230,42 +270,9 @@ print("OUTPUTS:", output_collector.get_outputs())
                             traceback: []
                         }
                     ]);
-                });
-
-                pyshell.on('close', () => {
-                    try {
-                        fs.unlinkSync(scriptPath);
-                    } catch (unlinkErr) {
-                        console.error('Failed to delete temp script:', unlinkErr);
-                    }
-                    this.globalState = newState;
-                    resolve(outputs);
-                });
-
-                pyshell.end((err: Error | null) => {
-                    if (err) {
-                        resolve([
-                            {
-                                type: 'error',
-                                timestamp: Date.now(),
-                                error: err.message,
-                                traceback: []
-                            }
-                        ]);
-                    }
-                });
-            });
-        } catch (error: any) {
-            console.error('Failed to execute Python code:', error);
-            return [
-                {
-                    type: 'error',
-                    timestamp: Date.now(),
-                    error: error.message || String(error),
-                    traceback: []
                 }
-            ];
-        }
+            });
+        });
     }
 
     public clearState(): void {
