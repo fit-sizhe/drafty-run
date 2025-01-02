@@ -3,6 +3,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { CellOutput } from './types';
 
+//
+// Updated PYTHON_SETUP_CODE with real-time partial output flushing
+//
 const PYTHON_SETUP_CODE = `
 import sys
 import io
@@ -34,7 +37,16 @@ class OutputCollector:
             **kwargs
         }
         self._outputs.append(output)
-    
+        # Flush partial output immediately for real-time streaming:
+        self._flush_partial(output)
+
+    def _flush_partial(self, output):
+        """
+        Print the single newly added output as a JSON string,
+        prefixed by PARTIAL_OUTPUTS: so we can detect it in the Node side.
+        """
+        print("PARTIAL_OUTPUTS:" + json.dumps(output))
+
     def add_text(self, text: str, stream: str = 'stdout'):
         if text.strip():
             self._add_output('text', content=text.strip(), stream=stream)
@@ -103,20 +115,21 @@ export class PythonRunner {
     /**
      * Executes `code` in a temporary Python script using the specified `pythonPath`.
      * Allows partial streaming by calling onDataCallback with text lines as they arrive.
+     * Returns both the outputs and the pyshell instance for process management.
      */
     public async executeCode(
         code: string,
         pythonPath: string,
         blockId: string,
         onDataCallback?: (partialOutput: CellOutput) => void
-    ): Promise<CellOutput[]> {
+    ): Promise<{outputs: CellOutput[], pyshell: PythonShell}> {
         const options = {
             mode: 'text' as const,
             pythonPath,
-            pythonOptions: ['-u'] // -u means unbuffered (helps streaming)
+            pythonOptions: ['-u'] // -u = unbuffered (helps streaming)
         };
 
-        // Inject our "globalState" into the user code
+        // Inject "globalState" into the user code
         const stateInjection = Object.entries(this.globalState)
             .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
             .join('\n');
@@ -124,37 +137,37 @@ export class PythonRunner {
         // Indent user code
         const indentedCode = code
             .split('\n')
-            .map((line) => '        ' + line)
+            .map((line) => '    ' + line)
             .join('\n');
 
         // Final code
         const wrappedCode = `${PYTHON_SETUP_CODE}
 ${stateInjection}
 
-stdout = io.StringIO()
-stderr = io.StringIO()
-sys.stdout = stdout
-sys.stderr = stderr
+# stdout = io.StringIO()
+# stderr = io.StringIO()
+# sys.stdout = stdout
+# sys.stderr = stderr
 
 try:
-    with redirect_stdout(stdout), redirect_stderr(stderr):
+#     with redirect_stdout(stdout), redirect_stderr(stderr):
 ${indentedCode}
-        cleanup_plots()
+    cleanup_plots()
 except Exception as e:
     output_collector.add_error(e)
 
 # restore stdout/stderr
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
+# sys.stdout = sys.__stdout__
+# sys.stderr = sys.__stderr__
 
 # Collect any leftover prints
-stdout_content = stdout.getvalue()
-stderr_content = stderr.getvalue()
-if stdout_content.strip():
-    output_collector.add_text(stdout_content, 'stdout')
-if stderr_content.strip():
-    output_collector.add_text(stderr_content, 'stderr')
-
+# stdout_content = stdout.getvalue()
+# stderr_content = stderr.getvalue()
+# if stdout_content.strip():
+#     output_collector.add_text(stdout_content, 'stdout')
+# if stderr_content.strip():
+#     output_collector.add_text(stderr_content, 'stderr')
+ 
 # Attempt to gather updated locals
 state_dict = {}
 locals_copy = dict(locals().items())
@@ -174,9 +187,9 @@ print("STATE:", json.dumps(state_dict))
 print("OUTPUTS:", output_collector.get_outputs())
 `;
 
-        return await new Promise<CellOutput[]>((resolve) => {
+        return await new Promise((resolve) => {
             let outputs: CellOutput[] = [];
-            let newState = {};
+            let newState: { [key: string]: any } = {};
 
             // Create a temporary .py script
             const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
@@ -185,13 +198,9 @@ print("OUTPUTS:", output_collector.get_outputs())
 
             const pyshell = new PythonShell(scriptPath, options);
 
-            // (Optional) If you want your extension to be able to terminate the process:
-            // e.g. runningProcesses.set(blockId, pyshell)
-            // For now, do it in your extension code; we just expose pyshell here if needed.
-
             pyshell.on('stderr', (stderrLine: string) => {
                 // Streams on stderr come line by line
-                console.error('Python error:', stderrLine);
+                console.debug('[Stream stderr]:', stderrLine);
                 if (onDataCallback) {
                     onDataCallback({
                         type: 'text',
@@ -203,7 +212,8 @@ print("OUTPUTS:", output_collector.get_outputs())
             });
 
             // Each line from stdout is passed to .on('message', ...)
-            // We'll parse "STATE:", "OUTPUTS:", or treat them as partial streaming lines
+            // We'll parse "STATE:", "OUTPUTS:", or "PARTIAL_OUTPUTS:" 
+            // or treat them as partial lines
             pyshell.on('message', (message: string) => {
                 if (!message.trim()) return;
 
@@ -222,8 +232,27 @@ print("OUTPUTS:", output_collector.get_outputs())
                     } catch (e) {
                         console.error('Failed to parse OUTPUTS JSON:', e);
                     }
+                } else if (message.startsWith('PARTIAL_OUTPUTS:')) {
+                    // Real-time partial output from output_collector
+                    console.debug('[Stream Partial]:', message);
+                    const jsonStr = message.slice('PARTIAL_OUTPUTS:'.length).trim();
+                    try {
+                        const partialObj = JSON.parse(jsonStr);
+                        if (onDataCallback) {
+                            // Provide the partial output to callback
+                            // partialObj already has e.g. "type", "content", etc.
+                            onDataCallback({
+                                ...partialObj,
+                                // Optionally override the timestamp with "now"
+                                timestamp: Date.now()
+                            });
+                        }
+                    } catch (err) {
+                        console.error('Failed to parse PARTIAL_OUTPUTS JSON:', err);
+                    }
                 } else {
-                    // Partial line from stdout
+                    // Just a normal partial line from stdout
+                    console.debug('[Stream stdout]:', message);
                     if (onDataCallback) {
                         onDataCallback({
                             type: 'text',
@@ -237,14 +266,15 @@ print("OUTPUTS:", output_collector.get_outputs())
 
             pyshell.on('error', (err) => {
                 console.error('PythonShell error:', err);
-                resolve([
-                    {
+                resolve({
+                    outputs: [{
                         type: 'error',
                         timestamp: Date.now(),
                         error: err.message,
                         traceback: []
-                    }
-                ]);
+                    }],
+                    pyshell
+                });
             });
 
             pyshell.on('close', () => {
@@ -256,20 +286,21 @@ print("OUTPUTS:", output_collector.get_outputs())
                 }
                 // Update global state
                 this.globalState = newState;
-                resolve(outputs);
+                resolve({ outputs, pyshell });
             });
 
-            // End the shell. (Sometimes necessary, but can also rely on 'close' event.)
+            // End the shell.  (We'll rely on 'close' event to finalize.)
             pyshell.end((err: Error | null) => {
                 if (err) {
-                    resolve([
-                        {
+                    resolve({
+                        outputs: [{
                             type: 'error',
                             timestamp: Date.now(),
                             error: err.message,
                             traceback: []
-                        }
-                    ]);
+                        }],
+                        pyshell
+                    });
                 }
             });
         });

@@ -215,13 +215,20 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
 
     // Actually run the code
     try {
-        const finalOutputs = await PythonRunner.getInstance().executeCode(
+        const result = await PythonRunner.getInstance().executeCode(
             code,
             selectedPythonPath,
             blockId,
             onPartialOutput  // <-- pass streaming callback
         );
-        blockExecution.outputs = finalOutputs;
+        
+        // Store pyshell instance for termination
+        runningProcesses.set(blockId, result.pyshell);
+        
+        // if (result.outputs.length > 0) {
+        //     blockExecution.outputs.push(...result.outputs);
+        // }       
+        // blockExecution.outputs = result.outputs;
         blockExecution.metadata.status = 'success';
     } catch (error) {
         const errStr = error instanceof Error ? error.message : String(error);
@@ -520,6 +527,7 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
         }
         .text-output {
             white-space: pre-wrap;
+            text-align: left;
             font-family: var(--vscode-editor-font-family);
         }
         .text-output.stderr {
