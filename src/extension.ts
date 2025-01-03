@@ -526,7 +526,6 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
             margin-bottom: 10px;
         }
         .text-output {
-            white-space: pre-wrap;
             text-align: left;
             font-family: var(--vscode-editor-font-family);
         }
