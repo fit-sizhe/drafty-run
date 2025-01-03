@@ -117,12 +117,15 @@ export class PythonRunner {
      * Allows partial streaming by calling onDataCallback with text lines as they arrive.
      * Returns both the outputs and the pyshell instance for process management.
      */
-    public async executeCode(
+    public executeCode(
         code: string,
         pythonPath: string,
         blockId: string,
         onDataCallback?: (partialOutput: CellOutput) => void
-    ): Promise<{outputs: CellOutput[], pyshell: PythonShell}> {
+    ): { 
+        pyshell: PythonShell,
+        promise: Promise<{ outputs: CellOutput[] }>
+    } {
         const options = {
             mode: 'text' as const,
             pythonPath,
@@ -187,19 +190,20 @@ print("STATE:", json.dumps(state_dict))
 print("OUTPUTS:", output_collector.get_outputs())
 `;
 
-        return await new Promise((resolve) => {
+        // Create a temporary .py script
+        const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
+        const scriptPath = path.join(tmpDir, `mdrun_temp_${Date.now()}.py`);
+        fs.writeFileSync(scriptPath, wrappedCode);
+
+        // Launch the Python process
+        const pyshell = new PythonShell(scriptPath, options);
+
+        // Build a promise that will resolve with the final outputs
+        const promise = new Promise<{ outputs: CellOutput[] }>((resolve) => {
             let outputs: CellOutput[] = [];
             let newState: { [key: string]: any } = {};
 
-            // Create a temporary .py script
-            const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
-            const scriptPath = path.join(tmpDir, `mdrun_temp_${Date.now()}.py`);
-            fs.writeFileSync(scriptPath, wrappedCode);
-
-            const pyshell = new PythonShell(scriptPath, options);
-
             pyshell.on('stderr', (stderrLine: string) => {
-                // Streams on stderr come line by line
                 console.debug('[Stream stderr]:', stderrLine);
                 if (onDataCallback) {
                     onDataCallback({
@@ -212,8 +216,6 @@ print("OUTPUTS:", output_collector.get_outputs())
             });
 
             // Each line from stdout is passed to .on('message', ...)
-            // We'll parse "STATE:", "OUTPUTS:", or "PARTIAL_OUTPUTS:" 
-            // or treat them as partial lines
             pyshell.on('message', (message: string) => {
                 if (!message.trim()) return;
 
@@ -239,11 +241,8 @@ print("OUTPUTS:", output_collector.get_outputs())
                     try {
                         const partialObj = JSON.parse(jsonStr);
                         if (onDataCallback) {
-                            // Provide the partial output to callback
-                            // partialObj already has e.g. "type", "content", etc.
                             onDataCallback({
                                 ...partialObj,
-                                // Optionally override the timestamp with "now"
                                 timestamp: Date.now()
                             });
                         }
@@ -251,7 +250,7 @@ print("OUTPUTS:", output_collector.get_outputs())
                         console.error('Failed to parse PARTIAL_OUTPUTS JSON:', err);
                     }
                 } else {
-                    // Just a normal partial line from stdout
+                    // Normal line from stdout
                     console.debug('[Stream stdout]:', message);
                     if (onDataCallback) {
                         onDataCallback({
@@ -272,8 +271,7 @@ print("OUTPUTS:", output_collector.get_outputs())
                         timestamp: Date.now(),
                         error: err.message,
                         traceback: []
-                    }],
-                    pyshell
+                    }]
                 });
             });
 
@@ -286,25 +284,16 @@ print("OUTPUTS:", output_collector.get_outputs())
                 }
                 // Update global state
                 this.globalState = newState;
-                resolve({ outputs, pyshell });
-            });
-
-            // End the shell.  (We'll rely on 'close' event to finalize.)
-            pyshell.end((err: Error | null) => {
-                if (err) {
-                    resolve({
-                        outputs: [{
-                            type: 'error',
-                            timestamp: Date.now(),
-                            error: err.message,
-                            traceback: []
-                        }],
-                        pyshell
-                    });
-                }
+                // Finally, resolve with the aggregated 'outputs'
+                resolve({ outputs });
             });
         });
+
+        // Return both the pyshell (for immediate termination) and
+        // a promise that yields the final outputs when done.
+        return { pyshell, promise };
     }
+
 
     public clearState(): void {
         this.globalState = {};

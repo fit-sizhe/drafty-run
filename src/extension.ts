@@ -214,17 +214,16 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
     };
 
     // Actually run the code
+    const { pyshell, promise } = PythonRunner.getInstance().executeCode(
+        code,
+        selectedPythonPath,
+        blockId,
+        onPartialOutput
+    );
+    runningProcesses.set(blockId, pyshell);
+
     try {
-        const result = await PythonRunner.getInstance().executeCode(
-            code,
-            selectedPythonPath,
-            blockId,
-            onPartialOutput  // <-- pass streaming callback
-        );
-        
-        // Store pyshell instance for termination
-        runningProcesses.set(blockId, result.pyshell);
-        
+        const { outputs } = await promise;
         // if (result.outputs.length > 0) {
         //     blockExecution.outputs.push(...result.outputs);
         // }       
