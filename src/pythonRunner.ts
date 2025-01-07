@@ -16,7 +16,7 @@ import types
 import copy
 from contextlib import redirect_stdout, redirect_stderr
 
-# Configure matplotlib for non-interactive backend
+# Configure matplotlib for a non-interactive backend
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -42,8 +42,8 @@ class OutputCollector:
 
     def _flush_partial(self, output):
         """
-        Print the single newly added output as a JSON string,
-        prefixed by PARTIAL_OUTPUTS: so we can detect it in the Node side.
+        Print only the newly added output as a JSON string,
+        prefixed by PARTIAL_OUTPUTS: so the Node side can detect it.
         """
         print("PARTIAL_OUTPUTS:" + json.dumps(output))
 
@@ -52,6 +52,10 @@ class OutputCollector:
             self._add_output('text', content=text.strip(), stream=stream)
     
     def add_image(self, format: str = 'png', **kwargs):
+        """
+        Capture all open figures, encode them, and send them as partial output.
+        If you want to close them right after capturing, uncomment plt.close('all').
+        """
         buf = io.BytesIO()
         
         if format == 'png':
@@ -66,7 +70,7 @@ class OutputCollector:
                          format=format,
                          data=image_data,
                          metadata=kwargs)
-        plt.close('all')
+        # plt.close('all')  # Optionally close figures if desired.
     
     def add_error(self, error: Exception):
         tb = traceback.extract_tb(error.__traceback__)
@@ -80,6 +84,7 @@ class OutputCollector:
     def get_outputs(self):
         return json.dumps(self._outputs)
 
+
 # Create an output collector for this execution
 output_collector = OutputCollector()
 
@@ -91,10 +96,42 @@ def custom_display_hook(obj):
 sys.__displayhook__ = custom_display_hook
 
 def cleanup_plots():
-    # If there are any active figures, convert them to images
+    """
+    If there are any active figures at the end, convert them to images.
+    """
     if plt.get_fignums():
         output_collector.add_image()
         plt.close('all')
+
+
+############################################################
+#   REAL-TIME MATPLOTLIB PATCHES
+############################################################
+
+_original_pause = plt.pause
+
+def _realtime_show(*args, **kwargs):
+    # Capture as partial output
+    if plt.get_fignums():
+        output_collector.add_image()
+    # If you prefer to close after each show, uncomment:
+    # plt.close('all')
+
+def _realtime_pause(interval):
+    # Original pause
+    _original_pause(interval)
+    # capture as partial output
+    if plt.get_fignums():
+        output_collector.add_image()
+    # If you prefer to close after each pause, uncomment:
+    # plt.close('all')
+
+# Monkey-patch show and pause for real-time streaming
+plt.show = _realtime_show
+plt.pause = _realtime_pause
+
+
+
 `;
 
 export class PythonRunner {
@@ -114,7 +151,7 @@ export class PythonRunner {
 
     /**
      * Executes `code` in a temporary Python script using the specified `pythonPath`.
-     * Allows partial streaming by calling onDataCallback with text lines as they arrive.
+     * Allows partial streaming by calling onDataCallback with text lines (or images) as they arrive.
      * Returns both the outputs and the pyshell instance for process management.
      */
     public executeCode(
@@ -143,35 +180,17 @@ export class PythonRunner {
             .map((line) => '    ' + line)
             .join('\n');
 
-        // Final code
+        // Final wrapped code
         const wrappedCode = `${PYTHON_SETUP_CODE}
 ${stateInjection}
 
-# stdout = io.StringIO()
-# stderr = io.StringIO()
-# sys.stdout = stdout
-# sys.stderr = stderr
-
 try:
-#     with redirect_stdout(stdout), redirect_stderr(stderr):
 ${indentedCode}
     cleanup_plots()
 except Exception as e:
     output_collector.add_error(e)
 
-# restore stdout/stderr
-# sys.stdout = sys.__stdout__
-# sys.stderr = sys.__stderr__
-
-# Collect any leftover prints
-# stdout_content = stdout.getvalue()
-# stderr_content = stderr.getvalue()
-# if stdout_content.strip():
-#     output_collector.add_text(stdout_content, 'stdout')
-# if stderr_content.strip():
-#     output_collector.add_text(stderr_content, 'stderr')
- 
-# Attempt to gather updated locals
+# Attempt to gather updated locals into JSON
 state_dict = {}
 locals_copy = dict(locals().items())
 
@@ -235,7 +254,7 @@ print("OUTPUTS:", output_collector.get_outputs())
                         console.error('Failed to parse OUTPUTS JSON:', e);
                     }
                 } else if (message.startsWith('PARTIAL_OUTPUTS:')) {
-                    // Real-time partial output from output_collector
+                    // Real-time partial output from OutputCollector
                     console.debug('[Stream Partial]:', message);
                     const jsonStr = message.slice('PARTIAL_OUTPUTS:'.length).trim();
                     try {
@@ -284,7 +303,7 @@ print("OUTPUTS:", output_collector.get_outputs())
                 }
                 // Update global state
                 this.globalState = newState;
-                // Finally, resolve with the aggregated 'outputs'
+                // Finally, resolve with aggregated outputs
                 resolve({ outputs });
             });
         });
@@ -293,7 +312,6 @@ print("OUTPUTS:", output_collector.get_outputs())
         // a promise that yields the final outputs when done.
         return { pyshell, promise };
     }
-
 
     public clearState(): void {
         this.globalState = {};

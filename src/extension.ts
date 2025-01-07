@@ -175,7 +175,7 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
         runNumber = sessionState.runCount;
     }
 
-    // Create a fresh CodeBlockExecution object
+    // Create (or replace) a CodeBlockExecution object
     const blockExecution: CodeBlockExecution = {
         content: code,
         info: env,
@@ -188,7 +188,7 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
         outputs: []
     };
 
-    // Put this block in the session state
+    // If no session, create one
     if (!sessionState) {
         sessionState = {
             codeBlocks: new Map(),
@@ -196,21 +196,39 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
             runCount: 1,
         };
     }
+    // Replace any previous execution for this block
     sessionState.codeBlocks.set(blockId, blockExecution);
 
-    // Force a quick update so the panel shows "running" status
-    updatePanel();
+    // Force a quick update so the panel shows a fresh block container
+    updatePanel(); // This ensures the block's "container" is in the DOM
 
-    // We'll define a small helper that collects partial output
+    // Handle partial streaming
     const onPartialOutput = (partialOutput: CellOutput) => {
-        // Push the new output line to the block's outputs
+        // 1) Store in session state
         const b = sessionState?.codeBlocks.get(blockId);
-        if (!b) {
-            return;
+        if (!b) return;
+        // If it's an image, replace any existing image in `b.outputs`
+        if (partialOutput.type === 'image') {
+            const oldImageIndex = b.outputs.findIndex(o => o.type === 'image');
+            if (oldImageIndex !== -1) {
+                // Overwrite the previously stored image
+                b.outputs[oldImageIndex] = partialOutput;
+            } else {
+                // If none exists yet, just push
+                b.outputs.push(partialOutput);
+            }
+        } else {
+            // For text, error, etc., just append
+            b.outputs.push(partialOutput);
         }
-        b.outputs.push(partialOutput);
-        // Re-render the panel to show partial progress
-        updatePanel();
+
+
+        // 2) Post a message to the webview to update *just* this block in real time
+        currentPanel?.webview.postMessage({
+            command: 'partialOutput',   
+            blockId,                   
+            output: partialOutput       
+        });
     };
 
     // Actually run the code
@@ -224,10 +242,6 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
 
     try {
         const { outputs } = await promise;
-        // if (result.outputs.length > 0) {
-        //     blockExecution.outputs.push(...result.outputs);
-        // }       
-        // blockExecution.outputs = result.outputs;
         blockExecution.metadata.status = 'success';
     } catch (error) {
         const errStr = error instanceof Error ? error.message : String(error);
@@ -246,6 +260,7 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
     }
 
     blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
+    // Final re-render to show the "finished" state
     updatePanel();
 }
 
@@ -279,7 +294,7 @@ function terminateBlockHandler(range: vscode.Range) {
             });
         }
 
-        updatePanel();
+        updatePanel();  // Re-render to reflect cancellation
         vscode.window.showInformationMessage(`Terminated execution of block at line ${range.start.line}.`);
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to terminate block: ${String(err)}`);
@@ -373,7 +388,7 @@ function listCondaEnvs(): Promise<{ label: string; path: string }[]> {
 }
 
 // ---------------------------------------------
-// Extract code blocks that are either python or javascript
+// Extract code blocks that are python/javascript
 // ---------------------------------------------
 function extractCodeBlocks(tokens: any[]): CodeBlock[] {
     const blocks: CodeBlock[] = [];
@@ -408,7 +423,6 @@ function updatePanel() {
 // ---------------------------------------------
 // Webview HTML
 // ---------------------------------------------
-// (Filtering out "pending" blocks so that only executed blocks appear.)
 function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
     // Build <option> tags from discoveredEnvironments
     const optionsHtml = discoveredEnvironments
@@ -418,60 +432,34 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
         })
         .join('');
 
-    // Sort by position, but only show blocks that have actually run (status != 'pending')
-    const filteredBlocks = Array.from(blocks.values()).filter(
-        (b) => b.metadata.status !== 'pending'
-    );
-    filteredBlocks.sort((a, b) => a.position - b.position);
+    // We only want to display blocks that have actually run or are running
+    const renderedBlocks = Array.from(blocks.values())
+        .filter((b) => b.metadata.status !== 'pending')
+        .sort((a, b) => a.position - b.position);
 
-    const outputHtml = filteredBlocks
+    // Build each block’s HTML
+    const outputHtml = renderedBlocks
         .map((block) => {
             const statusClass = `status-${block.metadata.status}`;
             const executionTime = block.metadata.executionTime
                 ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)`
                 : '';
-
-            // Instead of a "status" text, show "Output [runNumber]"
             const runLabel = block.metadata.runNumber
                 ? `Output [${block.metadata.runNumber}]`
                 : 'Output [?]';
 
+            // We'll give each block a unique container ID: "result-block-block-XX"
+            // so we can dynamically append partial output for that block later.
+            const blockContainerId = `result-block-${"block-" + block.position}`;
+
+            // Pre-render existing outputs (in case of re-runs or finished states)
             const outputsHtml = block.outputs
-                .map((output) => {
-                    switch (output.type) {
-                        case 'text':
-                            return `
-                                <div class="output text-output ${output.stream}">
-                                    ${escapeHtml(output.content)}
-                                </div>`;
-                        case 'image':
-                            return `
-                                <div class="output image-output">
-                                    <img src="data:image/${output.format};base64,${output.data}" 
-                                         alt="Output visualization" />
-                                </div>`;
-                        case 'error':
-                            return `
-                                <div class="output error-output">
-                                    <div class="error-message">${escapeHtml(output.error)}</div>
-                                </div>`;
-                        case 'rich':
-                            return `
-                                <div class="output rich-output">
-                                    ${
-                                        output.format === 'html' 
-                                            ? output.content
-                                            : escapeHtml(output.content)
-                                    }
-                                </div>`;
-                        default:
-                            return '';
-                    }
-                })
+                .map((output) => createOutputHtml(output))
                 .join('\n');
 
             return `
-                <div class="block-container ${statusClass}">
+                <div class="block-container ${statusClass}" 
+                     id="${blockContainerId}">
                     <div class="block-header">
                         <span class="status">${runLabel}</span>
                         <span class="time">${executionTime}</span>
@@ -483,12 +471,14 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
         })
         .join('\n');
 
+    // Wrap everything in a minimal HTML doc
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
     <title>Code Execution Results</title>
     <style>
+        /* your styles, same as before */
         body {
             padding: 20px;
             font-family: var(--vscode-editor-font-family);
@@ -530,7 +520,6 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
         }
         .text-output.stderr {
             color: var(--vscode-errorForeground);
-            background-color: var(--vscode-inputValidation-errorBackground);
         }
         .image-output {
             text-align: center;
@@ -569,6 +558,7 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
 
     <script>
         const vscode = acquireVsCodeApi();
+
         const envSelect = document.getElementById('envSelect');
         if (envSelect) {
             envSelect.addEventListener('change', (event) => {
@@ -578,9 +568,110 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
                 });
             });
         }
+
+        // Listen for partial outputs from extension
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.command === 'partialOutput') {
+                const { blockId, output } = message;
+                updateBlockOutput(blockId, output);
+            }
+        });
+
+        // Dynamically update or append partial outputs for a running block
+        function updateBlockOutput(blockId, output) {
+            // Our container ID: "result-block-" + blockId
+            const containerId = 'result-block-' + blockId;
+            const blockContainer = document.getElementById(containerId);
+            if (!blockContainer) {
+                return; // The block container doesn't exist yet
+            }
+            const outputsDiv = blockContainer.querySelector('.block-outputs');
+            if (!outputsDiv) {
+                return;
+            }
+
+            if (output.type === 'text') {
+                // Append a new line of text
+                const textDiv = document.createElement('div');
+                textDiv.classList.add('output', 'text-output');
+                if (output.stream) {
+                    textDiv.classList.add(output.stream);
+                }
+                textDiv.textContent = output.content;
+                outputsDiv.appendChild(textDiv);
+
+            } else if (output.type === 'image') {
+                // Update or create a single <img> to represent the live plot
+                // We'll wrap it in a .image-output if we want consistent styling
+                let imgWrapper = outputsDiv.querySelector('.image-output');
+                if (!imgWrapper) {
+                    imgWrapper = document.createElement('div');
+                    imgWrapper.classList.add('output', 'image-output');
+                    outputsDiv.appendChild(imgWrapper);
+                }
+                let imgEl = imgWrapper.querySelector('img.live-plot');
+                if (!imgEl) {
+                    imgEl = document.createElement('img');
+                    imgEl.classList.add('live-plot');
+                    imgWrapper.appendChild(imgEl);
+                }
+                // Update the SRC with the new base64 data
+                const format = output.format || 'png';
+                imgEl.src = 'data:image/' + format + ';base64,' + output.data;
+
+            } else if (output.type === 'error') {
+                // Show an error line
+                const errDiv = document.createElement('div');
+                errDiv.classList.add('output', 'error-output');
+                errDiv.textContent = output.error;
+                outputsDiv.appendChild(errDiv);
+
+            } else if (output.type === 'rich') {
+                // Append a "rich" HTML snippet
+                const richDiv = document.createElement('div');
+                richDiv.classList.add('output', 'rich-output');
+                if (output.format === 'html') {
+                    richDiv.innerHTML = output.content;
+                } else {
+                    richDiv.textContent = output.content;
+                }
+                outputsDiv.appendChild(richDiv);
+            }
+        }
     </script>
 </body>
 </html>`;
+}
+
+// ---------------------------------------------
+function createOutputHtml(output: CellOutput): string {
+    switch (output.type) {
+        case 'text':
+            return `
+                <div class="output text-output ${output.stream || ''}">
+                    ${escapeHtml(output.content)}
+                </div>`;
+        case 'image':
+            return `
+                <div class="output image-output">
+                    <img class="live-plot" src="data:image/${output.format || 'png'};base64,${output.data}" 
+                         alt="Output visualization" />
+                </div>`;
+        case 'error':
+            return `
+                <div class="output error-output">
+                    <div class="error-message">${escapeHtml(output.error)}</div>
+                </div>`;
+        case 'rich':
+            if (output.format === 'html') {
+                return `<div class="output rich-output">${output.content}</div>`;
+            } else {
+                return `<div class="output rich-output">${escapeHtml(output.content)}</div>`;
+            }
+        default:
+            return '';
+    }
 }
 
 function escapeHtml(unsafe: string): string {
