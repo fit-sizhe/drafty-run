@@ -1,4 +1,3 @@
-//////////////////// <extension.ts> ////////////////////
 import * as vscode from 'vscode';
 import * as MarkdownIt from 'markdown-it';
 import { exec } from 'child_process';
@@ -13,8 +12,6 @@ import { CodeBlock, CodeBlockExecution, CellOutput } from './types';
 // Global/Session State
 // ---------------------------------------------
 let currentPanel: vscode.WebviewPanel | undefined;
-let nodeGlobalState: { [key: string]: any } = {};
-
 let maxResultHeight = 400; // default max height for blocks in px
 
 interface SessionState {
@@ -104,7 +101,6 @@ async function ensurePanelAndEnvs() {
         // onDidDispose
         currentPanel.onDidDispose(() => {
             currentPanel = undefined;
-            nodeGlobalState = {};
             sessionState = undefined;
             PythonRunner.getInstance().clearState();
             runningProcesses.clear();
@@ -567,7 +563,7 @@ function extractCodeBlocks(tokens: any[]): CodeBlock[] {
         const token = tokens[i];
         if (
             token.type === 'fence' &&
-            (token.info.trim() === 'python' || token.info.trim() === 'javascript') &&
+            token.info.trim() === 'python' &&
             token.map
         ) {
             blocks.push({
@@ -911,7 +907,6 @@ function escapeHtml(unsafe: string): string {
 
 // ---------------------------------------------
 export function deactivate() {
-    nodeGlobalState = {};
     sessionState = undefined;
     if (currentPanel) {
         currentPanel.dispose();
