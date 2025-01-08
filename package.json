@@ -1,6 +1,6 @@
 {
-  "name": "mdrun",
-  "displayName": "Markdown Code Runner",
+  "name": "drafty",
+  "displayName": "Drafty Runner",
   "description": "Run code blocks in markdown files with state persistence",
   "version": "0.0.1",
   "engines": {
@@ -16,16 +16,16 @@
   "contributes": {
     "commands": [
       {
-        "command": "mdrun.startSession",
-        "title": "mdrun: Start Markdown Code Session"
+        "command": "drafty.startSession",
+        "title": "drafty: Start Markdown Code Session"
       },
       {
-        "command": "mdrun.runBlock'",
-        "title": "mdrun: Run Code Block"
+        "command": "drafty.runBlock'",
+        "title": "drafty: Run Code Block"
       },
       {
-        "command": "mdrun.terminateBlock",
-        "title": "mdrun: Terminate Block"
+        "command": "drafty.terminateBlock",
+        "title": "drafty: Terminate Block"
       }
     ]
   },

@@ -16,7 +16,6 @@ let currentPanel: vscode.WebviewPanel | undefined;
 let nodeGlobalState: { [key: string]: any } = {};
 
 let maxResultHeight = 400; // default max height for blocks in px
-let savedResultsPath: string | undefined; // path configured by user (and saved in .vscode/settings.json)
 
 interface SessionState {
     codeBlocks: Map<string, CodeBlockExecution>;
@@ -35,11 +34,11 @@ const runningProcesses: Map<string, any> = new Map();
 // Extension entry points
 // ---------------------------------------------
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Markdown Code Runner is now active');
+    console.log('Drafty is now active');
 
-    const startSessionCmd = vscode.commands.registerCommand('mdrun.startSession', startSessionHandler);
-    const runBlockCmd = vscode.commands.registerCommand('mdrun.runBlock', runBlockHandler);
-    const terminateBlockCmd = vscode.commands.registerCommand('mdrun.terminateBlock', terminateBlockHandler);
+    const startSessionCmd = vscode.commands.registerCommand('drafty.startSession', startSessionHandler);
+    const runBlockCmd = vscode.commands.registerCommand('drafty.runBlock', runBlockHandler);
+    const terminateBlockCmd = vscode.commands.registerCommand('drafty.terminateBlock', terminateBlockHandler);
 
     // Register commands and CodeLens provider
     context.subscriptions.push(startSessionCmd, runBlockCmd, terminateBlockCmd);
@@ -75,15 +74,6 @@ async function ensurePanelAndEnvs() {
             selectedPythonPath = discoveredEnvironments[0].path;
         }
 
-        // ------------------------------
-        // Load saved config from settings
-        // ------------------------------
-        const workspaceConfig = vscode.workspace.getConfiguration('mdrun');
-        const storedMaxHeight = workspaceConfig.get<number>('maxResultHeight');
-        if (storedMaxHeight !== undefined) {
-            maxResultHeight = storedMaxHeight;
-        }
-        savedResultsPath = workspaceConfig.get<string>('savedResultsPath');
 
         // ------------------------------
         // Set up message listener
@@ -97,9 +87,6 @@ async function ensurePanelAndEnvs() {
             } else if (message.command === 'changeMaxHeight') {
                 // user changed the max height
                 maxResultHeight = message.value;
-                // persist in .vscode/settings.json (requires a "configuration" scope in package.json)
-                const config = vscode.workspace.getConfiguration('mdrun');
-                config.update('maxResultHeight', maxResultHeight, vscode.ConfigurationTarget.Workspace);
 
                 // Re-render so blocks get the new max-height
                 updatePanel();
@@ -182,7 +169,7 @@ async function startSessionHandler() {
             currentBlockIndex: 0,
             runCount: 0
         };
-        vscode.window.showInformationMessage('New session started! Use "Run Code Block" or CodeLens to run code.');
+        vscode.window.showInformationMessage('New session started!');
     }
 
     updatePanel();
@@ -196,6 +183,11 @@ async function runBlockHandler(range: vscode.Range) {
     if (!editor) {
         return;
     }
+
+    if (!sessionState) {
+        await startSessionHandler();
+    }
+    
     let code = editor.document.getText(range);
     // Remove the Markdown fence lines:
     code = code.replace(/^```[\w\-]*\s*|```$/gm, '');
@@ -379,7 +371,7 @@ function handleSaveState() {
         return;
     }
 
-    // Example: <md-filename>-state-<yyyyMMdd>-<hhmm>.json
+    // <md-filename>-state-<yyyyMMdd>-<hhmm>.json
     const editor = vscode.window.activeTextEditor;
     if (!editor) return;
     const mdFullPath = editor.document.uri.fsPath;
@@ -396,11 +388,6 @@ function handleSaveState() {
     // By default, save to the same folder as the .md
     let defaultFolder = path.dirname(mdFullPath);
 
-    // If we already have a savedResultsPath in .vscode settings, we can use that
-    if (savedResultsPath && fs.existsSync(savedResultsPath)) {
-        defaultFolder = savedResultsPath;
-    }
-
     const fullSavePath = path.join(defaultFolder, fileName);
 
     // Write out the sessionState to a JSON object
@@ -410,10 +397,6 @@ function handleSaveState() {
         fs.writeFileSync(fullSavePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
         vscode.window.showInformationMessage(`Results saved to: ${fullSavePath}`);
 
-        // Update user workspace setting for "savedResultsPath" if not yet stored
-        const config = vscode.workspace.getConfiguration('mdrun');
-        config.update('savedResultsPath', defaultFolder, vscode.ConfigurationTarget.Workspace);
-        savedResultsPath = defaultFolder;
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to save results: ${String(err)}`);
     }
@@ -439,17 +422,17 @@ function serializeSessionState(state: SessionState) {
 
 // Try to load the most recent JSON state for the given .md file
 // Looks for <md-filename>-state-YYYYMMDD-HHMM.json in the same folder
-function tryLoadPreviousState(mdFullPath: string): SessionState | null {
+function tryLoadPreviousState(mdFullPath: string): SessionState | undefined {
     const dir = path.dirname(mdFullPath);
     const baseName = path.basename(mdFullPath, '.md');
     const re = new RegExp(`^${baseName}-state-(\\d{8})-(\\d{4})\\.json$`);
 
     if (!fs.existsSync(dir)) {
-        return null;
+        return undefined;
     }
     const files = fs.readdirSync(dir).filter((f) => re.test(f));
     if (files.length === 0) {
-        return null;
+        return undefined;
     }
 
     // Sort files by date/time descending
@@ -468,7 +451,7 @@ function tryLoadPreviousState(mdFullPath: string): SessionState | null {
         return deserializeSessionState(savedState);
     } catch (err) {
         console.error('Failed to load previous state:', err);
-        return null;
+        return undefined;
     }
 }
 
@@ -959,7 +942,7 @@ class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
                 // 1) Run code block
                 const runCmd: vscode.Command = {
                     title: '▶ Run Code Block',
-                    command: 'mdrun.runBlock',
+                    command: 'drafty.runBlock',
                     arguments: [range]
                 };
                 codeLenses.push(new vscode.CodeLens(range, runCmd));
@@ -967,7 +950,7 @@ class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
                 // 2) Terminate code block
                 const termCmd: vscode.Command = {
                     title: '✖ Terminate Execution',
-                    command: 'mdrun.terminateBlock',
+                    command: 'drafty.terminateBlock',
                     arguments: [range]
                 };
                 codeLenses.push(new vscode.CodeLens(range, termCmd));
