@@ -135,19 +135,12 @@ plt.pause = _realtime_pause
 `;
 
 export class PythonRunner {
-    private static instance: PythonRunner;
     
     // We'll store a "globalState" to allow basic retention of variables across runs.
     private globalState: { [key: string]: any } = {};
 
-    private constructor() {}
+    constructor() {}
 
-    public static getInstance(): PythonRunner {
-        if (!PythonRunner.instance) {
-            PythonRunner.instance = new PythonRunner();
-        }
-        return PythonRunner.instance;
-    }
 
     /**
      * Executes `code` in a temporary Python script using the specified `pythonPath`.
@@ -160,7 +153,7 @@ export class PythonRunner {
         blockId: string,
         onDataCallback?: (partialOutput: CellOutput) => void
     ): { 
-        pyshell: PythonShell,
+        process: PythonShell,
         promise: Promise<{ outputs: CellOutput[] }>
     } {
         const options = {
@@ -310,7 +303,7 @@ print("OUTPUTS:", output_collector.get_outputs())
 
         // Return both the pyshell (for immediate termination) and
         // a promise that yields the final outputs when done.
-        return { pyshell, promise };
+        return { process: pyshell, promise };
     }
 
     public clearState(): void {

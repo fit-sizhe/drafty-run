@@ -2,72 +2,144 @@ import * as vscode from 'vscode';
 import { CodeBlockExecution, CellOutput } from './types';
 import { Environment } from './env_setup';
 
+interface PanelInfo {
+    panel: vscode.WebviewPanel;
+    messageDisposable?: vscode.Disposable;
+    maxResultHeight: number;
+}
+
 export class WebviewManager {
-    private static instance: WebviewManager;
-    private currentPanel: vscode.WebviewPanel | undefined;
-    private maxResultHeight: number = 400;
-    private messageHandlerDisposable: vscode.Disposable | undefined;  // Track handler
+  private static instance: WebviewManager;
 
-    private constructor() {}
+  // docPath -> PanelInfo
+  private panels = new Map<string, PanelInfo>();
 
-    static getInstance(): WebviewManager {
-        if (!this.instance) {
-            this.instance = new WebviewManager();
-        }
-        return this.instance;
-    }
+  private constructor() {}
 
-    async ensurePanel(
+  static getInstance(): WebviewManager {
+      if (!this.instance) {
+          this.instance = new WebviewManager();
+      }
+      return this.instance;
+  }
+
+  /**
+   * Create or reuse a panel for the given docPath.
+   */
+  async ensurePanel(
       context: vscode.ExtensionContext, 
-      messageHandler: (message: any, context: vscode.ExtensionContext) => void,
+      docPath: string,
+      messageHandler: (message: any, ctx: vscode.ExtensionContext, panel: vscode.WebviewPanel) => void,
+      onPanelDisposed: (docPath: string) => void,   // run cleanup when webview is closed
       title?: string
-    ): Promise<void> {
-        if (!this.currentPanel) {
-            this.currentPanel = vscode.window.createWebviewPanel(
-                'codeResults',
-                title || 'Code Execution Results',
-                vscode.ViewColumn.Beside,
-                {
-                    enableScripts: true,
-                    retainContextWhenHidden: true
-                }
-            );
-        }
+  ): Promise<void> {
 
-        if (!this.messageHandlerDisposable) {
-            // Set up message handling using the provided handler
-            this.messageHandlerDisposable = this.currentPanel.webview.onDidReceiveMessage(
-              (message) => messageHandler(message, context)
-            );
+      if (!this.panels.has(docPath)) {
+          // Create a new panel
+          const filename = title || 'Code Execution Results';
+          const panel = vscode.window.createWebviewPanel(
+              'codeResults',
+              filename,
+              vscode.ViewColumn.Beside,
+              {
+                  enableScripts: true,
+                  retainContextWhenHidden: true
+              }
+          );
 
-            this.currentPanel.onDidDispose(() => {
-                this.messageHandlerDisposable?.dispose();  // Clean up handler
-                this.messageHandlerDisposable = undefined;
-                this.currentPanel = undefined;
-            });
-        }
-    }
+          const info: PanelInfo = {
+              panel,
+              maxResultHeight: 400,
+          };
 
-    getPanel(): vscode.WebviewPanel | undefined {
-        return this.currentPanel;
-    }
+          // Set up message handling
+          info.messageDisposable = panel.webview.onDidReceiveMessage(msg => {
+            messageHandler(msg, context, panel);
+          });
 
-    setMaxResultHeight(height: number): void {
-        this.maxResultHeight = height;
-    }
+          panel.onDidDispose(() => {
+            info.messageDisposable?.dispose();
+            this.panels.delete(docPath);
+            // Tell extension.ts "the panel for docPath was closed"
+            onPanelDisposed(docPath);
+        });
 
-    updateContent(blocks: Map<string, CodeBlockExecution>, environments: Environment[], selectedPath: string): void {
-        if (!this.currentPanel) {
-            return;
-        }
-        this.currentPanel.webview.html = this.getWebviewContent(blocks, environments, selectedPath);
-    }
+          this.panels.set(docPath, info);
+      }
+  }
 
-    private getWebviewContent(
-        blocks: Map<string, CodeBlockExecution>,
-        environments: Environment[],
-        selectedPath: string
-    ): string {
+  /**
+   * Reveal an existing panel (if any) for docPath.
+   */
+  revealPanel(docPath: string) {
+      const info = this.panels.get(docPath);
+      if (info) {
+          info.panel.reveal(vscode.ViewColumn.Beside, true);
+      }
+  }
+
+  getPanel(docPath: string): vscode.WebviewPanel | undefined {
+      return this.panels.get(docPath)?.panel;
+  }
+
+  /**
+   * Reverse lookup: given a panel, find which docPath it belongs to.
+   */
+  getDocPathForPanel(panel: vscode.WebviewPanel): string | undefined {
+      for (const [docPath, info] of this.panels.entries()) {
+          if (info.panel === panel) {
+              return docPath;
+          }
+      }
+      return undefined;
+  }
+
+  /**
+   * Update the max height for a given docPath’s panel.
+   */
+  setMaxResultHeight(docPath: string, height: number): void {
+      const info = this.panels.get(docPath);
+      if (info) {
+          info.maxResultHeight = height;
+      }
+  }
+
+  /**
+   * Create the HTML content for this docPath's webview and update it.
+   */
+  updateContent(
+      docPath: string,
+      blocks: Map<string, CodeBlockExecution>,
+      environments: Environment[],
+      selectedPath: string
+  ): void {
+      const info = this.panels.get(docPath);
+      if (!info) {
+          return;
+      }
+      info.panel.webview.html = this.getWebviewContent(
+          blocks, environments, selectedPath, info.maxResultHeight
+      );
+  }
+
+  /**
+   * Optionally close all panels on extension deactivation.
+   */
+  disposeAllPanels() {
+      for (const [, info] of this.panels) {
+          info.messageDisposable?.dispose();
+          info.panel.dispose();
+      }
+      this.panels.clear();
+  }
+
+  // The rest of your existing getWebviewContent(...) logic:
+  private getWebviewContent(
+      blocks: Map<string, CodeBlockExecution>,
+      environments: Environment[],
+      selectedPath: string,
+      maxResultHeight: number
+  ): string {
         // Build <option> tags from environments
         const optionsHtml = environments
             .map((env) => {
@@ -100,7 +172,7 @@ export class WebviewManager {
                 return `
                     <div class="block-container ${statusClass}"
                          id="${blockContainerId}"
-                         style="max-height: ${this.maxResultHeight}px; overflow-y: auto;">
+                         style="max-height: ${maxResultHeight}px; overflow-y: auto;">
                         <div class="block-header">
                             <span class="status">${runLabel}</span>
                             <span class="time">${executionTime}</span>
@@ -201,8 +273,11 @@ export class WebviewManager {
         <select id="envSelect">${optionsHtml}</select>
 
         <label for="maxHeightInput"><strong>Max result height (px):</strong></label>
-        <input type="number" id="maxHeightInput" min="50" step="10" value="${this.maxResultHeight}" />
-
+        <input type="number" id="maxHeightInput" min="50" step="10" value="${maxResultHeight}" />
+        
+        <button id="clearButton">Clear Results</button>
+    </div>
+    <div class="panel-top">
         <button id="saveButton">Save Results</button>
     </div>
 
@@ -237,6 +312,14 @@ export class WebviewManager {
                     value: newVal
                 });
             }
+        });
+
+        // "Clear Results" button
+        const clearButton = document.getElementById('clearButton');
+        clearButton?.addEventListener('click', () => {
+            vscode.postMessage({
+                command: 'clearState'
+            });
         });
 
         // "Save Results" button

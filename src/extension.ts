@@ -4,8 +4,9 @@ import * as MarkdownIt from 'markdown-it';
 import { CodeBlock, CodeBlockExecution, CellOutput } from './types';
 import { PythonRunner } from './pythonRunner';
 import { EnvironmentManager } from './env_setup';
-import { StateManager } from './state_io';
+import { StateManager, SessionState } from './state_io';
 import { WebviewManager } from './webview';
+import { clear } from 'console';
 
 // Keep track of running processes to allow termination
 const runningProcesses: Map<string, any> = new Map();
@@ -13,6 +14,7 @@ const runningProcesses: Map<string, any> = new Map();
 // Interface for language runners
 export interface ILanguageRunner {
     executeCode(
+        docPath: string,
         code: string,
         envPath: string,
         blockId: string,
@@ -21,50 +23,86 @@ export interface ILanguageRunner {
         process: any;
         promise: Promise<{ outputs: CellOutput[] }>;
     };
-    clearState(): void;
+    /**
+     * Clear *only* the runner's state for the given docPath,
+     */
+    clearState(docPath: string): void;
+
+    /**
+     * Completely remove (dispose) the runner instance for docPath from memory.
+     */
+    disposeRunner(docPath: string): void;
 }
+
 
 // Adapter to make PythonRunner match ILanguageRunner interface
 class PythonRunnerAdapter implements ILanguageRunner {
-    private runner: PythonRunner;
-
-    constructor(runner: PythonRunner) {
-        this.runner = runner;
+    private runners = new Map<string, PythonRunner>();
+    
+    private getRunner(docPath: string): PythonRunner {
+        if (!this.runners.has(docPath)) {
+            this.runners.set(docPath, new PythonRunner());
+        }
+        return this.runners.get(docPath)!;
     }
 
     executeCode(
-        code: string,
-        envPath: string,
-        blockId: string,
+        docPath: string, 
+        code: string, 
+        envPath: string, 
+        blockId: string, 
         onPartialOutput?: (output: CellOutput) => void
-    ): { 
-        process: any;
-        promise: Promise<{ outputs: CellOutput[] }>;
-    } {
-        const result = this.runner.executeCode(code, envPath, blockId, onPartialOutput);
-        return {
-            process: result.pyshell,
-            promise: result.promise
-        };
+    ) {
+        const runner = this.getRunner(docPath);
+        return runner.executeCode(code, envPath, blockId, onPartialOutput);
     }
 
-    clearState(): void {
-        this.runner.clearState();
+    clearState(docPath: string): void {
+        const runner = this.runners.get(docPath);
+        if (runner) {
+            runner.clearState();
+            this.runners.delete(docPath);
+        }
     }
+
+    disposeRunner(docPath: string): void {
+        // Remove the runner from the map entirely
+        this.runners.delete(docPath);
+    }
+
+    disposeAll(): void {
+        this.runners.clear();
+    }    
+}
+
+// A callback for when the user closes the results panel
+function panelDisposedCallback(docPath: string) {
+    console.log(`Panel for docPath: ${docPath} disposed.`);
+
+    // 1) Remove the runner
+    const pythonAdapter = languageRunners.get('python');
+    pythonAdapter?.disposeRunner(docPath);
+
+    // 2) Remove the session
+    StateManager.getInstance().removeSession(docPath);
+
+    // Optionally show a message or do other cleanup
+    console.log('Runner and session removed for doc:', docPath);
 }
 
 // Registry for language runners
 const languageRunners = new Map<string, ILanguageRunner>();
 
 // Register the Python runner by default
-languageRunners.set('python', new PythonRunnerAdapter(PythonRunner.getInstance()));
+const pythonAdapter = new PythonRunnerAdapter();
+languageRunners.set('python', pythonAdapter);
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Drafty is now active');
 
     const startSessionCmd = vscode.commands.registerCommand('drafty.startSession', () => startSessionHandler(context));
     const runBlockCmd = vscode.commands.registerCommand('drafty.runBlock', (range: vscode.Range) => runBlockHandler(context, range));
-    const terminateBlockCmd = vscode.commands.registerCommand('drafty.terminateBlock', terminateBlockHandler);
+    const terminateBlockCmd = vscode.commands.registerCommand('drafty.terminateBlock', (range: vscode.Range) => terminateBlockHandler(context, range));
 
     // Register commands and CodeLens provider
     context.subscriptions.push(startSessionCmd, runBlockCmd, terminateBlockCmd);
@@ -72,25 +110,97 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.languages.registerCodeLensProvider('markdown', new MarkdownCodeLensProvider())
     );
 
-    // Initialize managers
-    WebviewManager.getInstance();
+    // Listen for when a Markdown doc is closed.
+    context.subscriptions.push(
+        vscode.workspace.onDidCloseTextDocument((doc) => {
+            if (doc.languageId === 'markdown') {
+                const docPath = doc.uri.fsPath;
+                // Remove runner
+                const pythonAdapter = languageRunners.get('python');
+                pythonAdapter?.disposeRunner(docPath);
+                // Remove session from StateManager
+                StateManager.getInstance().removeSession(docPath);
+
+                console.log(`Removed runner and session for closed doc: ${docPath}`);
+            }
+        })
+    );
+
+    // Initialize singletons
+    WebviewManager.getInstance(); 
     EnvironmentManager.getInstance();
     StateManager.getInstance();
 }
 
-async function handleWebviewMessage(message: any) {
+////////////////////////////////////////////////////////////////////////////////
+// Multi-file session & panel management
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * For each opened Markdown file, we keep:
+ * - a dedicated session (SessionState) in the StateManager
+ * - a dedicated WebviewPanel in the WebviewManager
+ *
+ * By default, StateManager and WebviewManager were singletons. 
+ * Now we store state/panels by 'docPath' (the absolute path to the .md file).
+ */
+function getDocPath(editor: vscode.TextEditor | undefined): string | undefined {
+    if (!editor || editor.document.languageId !== 'markdown') {
+        return undefined;
+    }
+    return editor.document.uri.fsPath;
+}
+
+async function handleWebviewMessage(
+    message: any, 
+    context: vscode.ExtensionContext, 
+    panel: vscode.WebviewPanel
+) {
     const envManager = EnvironmentManager.getInstance();
     const webviewManager = WebviewManager.getInstance();
     const _stateManager = StateManager.getInstance();
 
-    if (message.command === 'changeEnv') {
-        envManager.setSelectedPath(message.pythonPath);
-        vscode.window.showInformationMessage(`Switched to: ${message.pythonPath}`);
-    } else if (message.command === 'changeMaxHeight') {
-        webviewManager.setMaxResultHeight(message.value);
-        updatePanel();
-    } else if (message.command === 'saveState') {
-        handleSaveState();
+    // Now, do a reverse lookup using `panel`:
+    const docPath = webviewManager.getDocPathForPanel(panel);
+    if (!docPath) {
+        vscode.window.showErrorMessage('Cannot determine which file triggered the webview message.');
+        return;
+    }
+
+    switch (message.command) {
+        case 'changeEnv':
+            envManager.setSelectedPath(message.pythonPath);
+            vscode.window.showInformationMessage(`Switched to: ${message.pythonPath}`);
+            break;
+
+        case 'changeMaxHeight':
+            webviewManager.setMaxResultHeight(docPath, message.value);
+            updatePanel(docPath);
+            break;
+
+        case 'saveState':
+            handleSaveState(docPath);
+            break;
+
+        case 'clearState': {
+            // Clear runner's global Python variables
+            const pythonAdapter = languageRunners.get('python');
+            pythonAdapter?.clearState(docPath);
+
+            // Reset the session’s codeBlocks
+            const stateManager = StateManager.getInstance();
+            stateManager.clearSession(docPath);
+
+            // Refresh the panel so the user sees a blank output
+            updatePanel(docPath);
+
+            vscode.window.showInformationMessage(`Cleared state for doc: ${path.basename(docPath)}`);
+            break;
+        }
+
+        default:
+            // no-op
+            break;
     }
 }
 
@@ -101,18 +211,31 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
         return;
     }
 
+    const mdFullPath = editor.document.uri.fsPath;
+    const stateManager = StateManager.getInstance();
     const webviewManager = WebviewManager.getInstance();
     const envManager = EnvironmentManager.getInstance();
-    const stateManager = StateManager.getInstance();
 
-    // Initialize environment manager
+    // If we already have a session for this file, reveal its panel
+    if (stateManager.hasSession(mdFullPath)) {
+        webviewManager.revealPanel(mdFullPath);
+        vscode.window.showInformationMessage('Session is already active for this file!');
+        return;
+    }
+
+    // Otherwise, create a new session for this file
     await envManager.initialize();
 
-    // Create webview panel
-    const mdFullPath = editor.document.uri.fsPath;
-    const filename = path.basename(mdFullPath, '.md')
+    // Create a Webview panel for this file
+    const filename = path.basename(mdFullPath, '.md');
     const title = `${filename} Results`;
-    await webviewManager.ensurePanel(context, handleWebviewMessage, title);
+    await webviewManager.ensurePanel(
+        context, 
+        mdFullPath, 
+        handleWebviewMessage, 
+        panelDisposedCallback, 
+        title
+    );
 
     // Attempt to load previous state
     const existingState = stateManager.tryLoadPreviousState(mdFullPath);
@@ -124,22 +247,25 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
     const codeBlocks = extractCodeBlocks(tokens);
 
     if (existingState) {
-        stateManager.setCurrentState(existingState);
-        // Add any new code blocks
+        // Load previous session data
+        stateManager.setSession(mdFullPath, existingState);
+
+        // Add new code blocks that might not exist in the old state
+        const currSession = stateManager.getSession(mdFullPath)!;
         codeBlocks.forEach((block) => {
             const blockId = `block-${block.position}`;
-            const currentState = stateManager.getCurrentState()!;
-            if (!currentState.codeBlocks.has(blockId)) {
-                currentState.codeBlocks.set(blockId, {
+            if (!currSession.codeBlocks.has(blockId)) {
+                currSession.codeBlocks.set(blockId, {
                     ...block,
                     metadata: { status: 'pending', timestamp: Date.now() },
                     outputs: []
                 });
             }
         });
+
         vscode.window.showInformationMessage('Previous session state loaded.');
     } else {
-        // Initialize new session
+        // Create a fresh session
         const blockMap = new Map<string, CodeBlockExecution>();
         codeBlocks.forEach((block) => {
             const blockId = `block-${block.position}`;
@@ -153,15 +279,16 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
             });
         });
 
-        stateManager.setCurrentState({
+        const newState = {
             codeBlocks: blockMap,
             currentBlockIndex: 0,
             runCount: 0
-        });
+        };
+        stateManager.setSession(mdFullPath, newState);
         vscode.window.showInformationMessage('New session started!');
     }
 
-    updatePanel();
+    updatePanel(mdFullPath);
 }
 
 async function runBlockHandler(context: vscode.ExtensionContext, range: vscode.Range) {
@@ -170,15 +297,26 @@ async function runBlockHandler(context: vscode.ExtensionContext, range: vscode.R
         return;
     }
 
-    const stateManager = StateManager.getInstance();
-    if (!stateManager.getCurrentState()) {
-        await startSessionHandler(context);
+    const docPath = getDocPath(editor);
+    if (!docPath) {
+        vscode.window.showErrorMessage('Please open a Markdown file first.');
+        return;
     }
-    
+
+    // Make sure user has started a session for this file
+    const stateManager = StateManager.getInstance();
+    if (!stateManager.hasSession(docPath)) {
+        // Approach B: Show error if no session
+        vscode.window.showErrorMessage(`No active Drafty session for: ${path.basename(docPath)}. 
+Please run "Drafty: Start Session" first.`);
+        return;
+    }
+
+    // Extract code from the selected range
     let code = editor.document.getText(range);
     code = code.replace(/^```[\w\-]*\s*|```$/gm, '');
 
-    // Look up the fence info
+    // Figure out the fence's info (language)
     const text = editor.document.getText();
     const md = new MarkdownIt();
     const tokens = md.parse(text, {});
@@ -197,24 +335,36 @@ async function runBlockHandler(context: vscode.ExtensionContext, range: vscode.R
         env = '';
     }
 
-    await runSingleCodeBlock(context, code, range.start.line, env);
+    await runSingleCodeBlock(context, docPath, code, range.start.line, env);
 }
 
-async function runSingleCodeBlock(context: vscode.ExtensionContext, code: string, position: number, language: string) {
+async function runSingleCodeBlock(
+    context: vscode.ExtensionContext, 
+    docPath: string, 
+    code: string, 
+    position: number, 
+    language: string
+) {
     const webviewManager = WebviewManager.getInstance();
     const envManager = EnvironmentManager.getInstance();
     const stateManager = StateManager.getInstance();
 
-    await webviewManager.ensurePanel(context, handleWebviewMessage);
+    // Ensure panel is open or reveal it
+    await webviewManager.ensurePanel(context, docPath, handleWebviewMessage, panelDisposedCallback);
+    webviewManager.revealPanel(docPath);
 
-    const blockId = `block-${position}`;
-
-    let runNumber = 1;
-    const currentState = stateManager.getCurrentState();
-    if (currentState) {
-        currentState.runCount++;
-        runNumber = currentState.runCount;
+    // Retrieve the existing session for this doc
+    const currentState = stateManager.getSession(docPath);
+    if (!currentState) {
+        // This theoretically shouldn't happen, because we checked in runBlockHandler,
+        // but just in case:
+        vscode.window.showErrorMessage(`No session found for file: ${docPath}`);
+        return;
     }
+
+    currentState.runCount++;
+    const runNumber = currentState.runCount;
+    const blockId = `block-${position}`;
 
     const blockExecution: CodeBlockExecution = {
         content: code,
@@ -223,29 +373,23 @@ async function runSingleCodeBlock(context: vscode.ExtensionContext, code: string
         metadata: {
             status: 'running',
             timestamp: Date.now(),
-            runNumber: runNumber,
+            runNumber,
         },
         outputs: []
     };
 
-    if (!currentState) {
-        stateManager.setCurrentState({
-            codeBlocks: new Map(),
-            currentBlockIndex: 0,
-            runCount: 1,
-        });
-    }
+    // Place or replace in the map
+    currentState.codeBlocks.set(blockId, blockExecution);
+    updatePanel(docPath);
 
-    stateManager.getCurrentState()!.codeBlocks.set(blockId, blockExecution);
-    updatePanel();
-
-    const panel = webviewManager.getPanel();
+    // Ask webview to scroll to this block
+    const panel = webviewManager.getPanel(docPath);
     panel?.webview.postMessage({
         command: 'scrollToBlock',
         blockId
     });
 
-    // Get the appropriate runner for the language
+    // Runner
     const runner = languageRunners.get(language.toLowerCase());
     if (!runner) {
         blockExecution.metadata.status = 'error';
@@ -255,24 +399,27 @@ async function runSingleCodeBlock(context: vscode.ExtensionContext, code: string
             error: `No runner available for language: ${language}`,
             traceback: []
         }];
-        updatePanel();
+        updatePanel(docPath);
         return;
     }
 
     const onPartialOutput = (partialOutput: CellOutput) => {
-        const state = stateManager.getCurrentState();
-        const b = state?.codeBlocks.get(blockId);
-        if (!b) return;
+        const currSession = stateManager.getSession(docPath);
+        if (!currSession) return;
+
+        const block = currSession.codeBlocks.get(blockId);
+        if (!block) return;
 
         if (partialOutput.type === 'image') {
-            const oldImageIndex = b.outputs.findIndex(o => o.type === 'image');
+            // Overwrite old images from same run
+            const oldImageIndex = block.outputs.findIndex(o => o.type === 'image');
             if (oldImageIndex !== -1) {
-                b.outputs[oldImageIndex] = partialOutput;
+                block.outputs[oldImageIndex] = partialOutput;
             } else {
-                b.outputs.push(partialOutput);
+                block.outputs.push(partialOutput);
             }
         } else {
-            b.outputs.push(partialOutput);
+            block.outputs.push(partialOutput);
         }
 
         panel?.webview.postMessage({
@@ -283,6 +430,7 @@ async function runSingleCodeBlock(context: vscode.ExtensionContext, code: string
     };
 
     const { process, promise } = runner.executeCode(
+        docPath,
         code,
         envManager.getSelectedPath(),
         blockId,
@@ -309,24 +457,40 @@ async function runSingleCodeBlock(context: vscode.ExtensionContext, code: string
     }
 
     blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
-    updatePanel();
+    updatePanel(docPath);
 }
 
-function terminateBlockHandler(range: vscode.Range) {
-    const stateManager = StateManager.getInstance();
-    const currentState = stateManager.getCurrentState();
-    
-    if (!currentState) {
-        vscode.window.showErrorMessage('No session running to terminate a block.');
+function terminateBlockHandler(context: vscode.ExtensionContext, range: vscode.Range) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
         return;
     }
-    
+
+    const docPath = getDocPath(editor);
+    if (!docPath) {
+        vscode.window.showErrorMessage('Please open a Markdown file first.');
+        return;
+    }
+
+    const stateManager = StateManager.getInstance();
+    if (!stateManager.hasSession(docPath)) {
+        vscode.window.showErrorMessage(`No active session for file: ${path.basename(docPath)}. 
+Please run "Drafty: Start Session" first.`);
+        return;
+    }
+
+    const currentState = stateManager.getSession(docPath);
+    if (!currentState) {
+        vscode.window.showErrorMessage(`No session found for file: ${docPath}`);
+        return;
+    }
+
     const blockId = `block-${range.start.line}`;
     if (!runningProcesses.has(blockId)) {
         vscode.window.showInformationMessage('No running process found for this block.');
         return;
     }
-    
+
     try {
         const processToKill = runningProcesses.get(blockId);
         processToKill?.kill?.();
@@ -343,36 +507,52 @@ function terminateBlockHandler(range: vscode.Range) {
             });
         }
 
-        updatePanel();
+        updatePanel(docPath);
         vscode.window.showInformationMessage(`Terminated execution of block at line ${range.start.line}.`);
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to terminate block: ${String(err)}`);
     }
 }
 
-function handleSaveState() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
-
+/**
+ * Called when user clicks "Save Results" in the webview.
+ * We do Approach B: If there's no session for that doc, we show an error.
+ */
+function handleSaveState(mdFullPath: string) {
     const stateManager = StateManager.getInstance();
+    if (!stateManager.hasSession(mdFullPath)) {
+        vscode.window.showErrorMessage(`No active session for file: ${path.basename(mdFullPath)}. 
+Please run "Drafty: Start Session" first.`);
+        return;
+    }
+
+    const session = stateManager.getSession(mdFullPath);
+    if (!session) {
+        vscode.window.showErrorMessage(`No session found for file: ${mdFullPath}`);
+        return;
+    }
+
     try {
-        const savePath = stateManager.saveCurrentState(editor.document.uri.fsPath);
+        const savePath = stateManager.saveSession(mdFullPath, session);
         vscode.window.showInformationMessage(`Results saved to: ${savePath}`);
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to save results: ${String(err)}`);
     }
 }
 
-function updatePanel() {
+/** Re-renders the webview panel for a given docPath. */
+function updatePanel(docPath: string) {
     const webviewManager = WebviewManager.getInstance();
     const envManager = EnvironmentManager.getInstance();
     const stateManager = StateManager.getInstance();
 
-    const currentState = stateManager.getCurrentState();
-    if (!currentState) return;
-
+    const session = stateManager.getSession(docPath);
+    if (!session) {
+        return;
+    }
     webviewManager.updateContent(
-        currentState.codeBlocks,
+        docPath,
+        session.codeBlocks,
         envManager.getEnvironments(),
         envManager.getSelectedPath()
     );
@@ -432,17 +612,17 @@ class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
 
 export function deactivate() {
     const stateManager = StateManager.getInstance();
+    stateManager.clearAllSessions();
+
     const webviewManager = WebviewManager.getInstance();
-    
-    stateManager.clearState();
-    const panel = webviewManager.getPanel();
-    if (panel) {
-        panel.dispose();
+    webviewManager.disposeAllPanels();
+
+    // remove *all* runners from pythonAdapter:
+    const pythonAdapter = languageRunners.get('python');
+    // We can define a helper method in the adapter:
+    if (pythonAdapter && 'disposeAll' in pythonAdapter) {
+        (pythonAdapter as any).disposeAll();
     }
     
-    // Clear all runners
-    for (const runner of languageRunners.values()) {
-        runner.clearState();
-    }
-    runningProcesses.clear();
+    console.log('Drafty extension deactivated');
 }

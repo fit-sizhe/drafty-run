@@ -10,7 +10,8 @@ export interface SessionState {
 
 export class StateManager {
     private static instance: StateManager;
-    private currentState: SessionState | undefined;
+
+    private sessions: Map<string, SessionState> = new Map();
 
     private constructor() {}
 
@@ -21,16 +22,50 @@ export class StateManager {
         return this.instance;
     }
 
-    getCurrentState(): SessionState | undefined {
-        return this.currentState;
+    hasSession(docPath: string): boolean {
+      return this.sessions.has(docPath);
     }
 
-    setCurrentState(state: SessionState): void {
-        this.currentState = state;
+    getSession(docPath: string): SessionState | undefined {
+        return this.sessions.get(docPath);
     }
 
-    clearState(): void {
-        this.currentState = undefined;
+    setSession(docPath: string, state: SessionState): void {
+        this.sessions.set(docPath, state);
+    }
+
+    clearAllSessions(): void {
+        this.sessions.clear();
+    }
+
+    removeSession(docPath: string): void {
+      this.sessions.delete(docPath);
+    }
+
+    clearSession(docPath: string): void {
+        const session = this.sessions.get(docPath);
+        if (session) {
+            // Reset all code blocks to 'pending', or empty them, etc.
+            session.runCount = 0;
+            session.currentBlockIndex = 0;
+            session.codeBlocks = new Map(); 
+        }
+    }
+
+    saveSession(mdFullPath: string, session: SessionState): string {
+      const baseName = path.basename(mdFullPath, '.md');
+      const now = new Date();
+      const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const hhmm = String(now.getHours()).padStart(2, '0') + 
+                  String(now.getMinutes()).padStart(2, '0');
+      const fileName = `${baseName}-state-${yyyymmdd}-${hhmm}.json`;
+      const defaultFolder = path.dirname(mdFullPath);
+      const fullSavePath = path.join(defaultFolder, fileName);
+
+      const dataToSave = this.serializeSessionState(session);
+      fs.writeFileSync(fullSavePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
+
+      return fullSavePath;
     }
 
     // Try to load the most recent JSON state for the given .md file
@@ -65,27 +100,6 @@ export class StateManager {
             console.error('Failed to load previous state:', err);
             return undefined;
         }
-    }
-
-    // Save current state to a JSON file
-    saveCurrentState(mdFullPath: string): string {
-        if (!this.currentState) {
-            throw new Error('No session state to save.');
-        }
-
-        const baseName = path.basename(mdFullPath, '.md');
-        const now = new Date();
-        const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
-        const hhmm = String(now.getHours()).padStart(2, '0') + 
-                    String(now.getMinutes()).padStart(2, '0');
-        const fileName = `${baseName}-state-${yyyymmdd}-${hhmm}.json`;
-        const defaultFolder = path.dirname(mdFullPath);
-        const fullSavePath = path.join(defaultFolder, fileName);
-
-        const dataToSave = this.serializeSessionState(this.currentState);
-        fs.writeFileSync(fullSavePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
-
-        return fullSavePath;
     }
 
     private serializeSessionState(state: SessionState): any {
