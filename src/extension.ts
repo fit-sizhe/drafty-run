@@ -15,6 +15,9 @@ import { CodeBlock, CodeBlockExecution, CellOutput } from './types';
 let currentPanel: vscode.WebviewPanel | undefined;
 let nodeGlobalState: { [key: string]: any } = {};
 
+let maxResultHeight = 400; // default max height for blocks in px
+let savedResultsPath: string | undefined; // path configured by user (and saved in .vscode/settings.json)
+
 interface SessionState {
     codeBlocks: Map<string, CodeBlockExecution>;
     currentBlockIndex: number;
@@ -45,12 +48,20 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
+// ---------------------------------------------
+// Ensure panel is open + gather Python envs
+// ---------------------------------------------
 async function ensurePanelAndEnvs() {
-    // If the panel doesn't exist, create it & set up environment discovery
     if (!currentPanel) {
+        const editor = vscode.window.activeTextEditor;
+        let panel_title = "Code Execution Results";
+        if (editor) {
+            const mdFullPath = editor.document.uri.fsPath;
+            panel_title = path.basename(mdFullPath, '.md') + ".md Results";
+        }
         currentPanel = vscode.window.createWebviewPanel(
             'codeResults',
-            'Code Execution Results',
+            panel_title,
             vscode.ViewColumn.Beside,
             {
                 enableScripts: true,
@@ -64,14 +75,46 @@ async function ensurePanelAndEnvs() {
             selectedPythonPath = discoveredEnvironments[0].path;
         }
 
-        // Set up message listener, dispose handler, etc.:
+        // ------------------------------
+        // Load saved config from settings
+        // ------------------------------
+        const workspaceConfig = vscode.workspace.getConfiguration('mdrun');
+        const storedMaxHeight = workspaceConfig.get<number>('maxResultHeight');
+        if (storedMaxHeight !== undefined) {
+            maxResultHeight = storedMaxHeight;
+        }
+        savedResultsPath = workspaceConfig.get<string>('savedResultsPath');
+
+        // ------------------------------
+        // Set up message listener
+        // ------------------------------
         currentPanel.webview.onDidReceiveMessage((message) => {
             if (message.command === 'changeEnv') {
+                // user changed python environment
                 selectedPythonPath = message.pythonPath;
                 vscode.window.showInformationMessage(`Switched to: ${selectedPythonPath}`);
+
+            } else if (message.command === 'changeMaxHeight') {
+                // user changed the max height
+                maxResultHeight = message.value;
+                // persist in .vscode/settings.json (requires a "configuration" scope in package.json)
+                const config = vscode.workspace.getConfiguration('mdrun');
+                config.update('maxResultHeight', maxResultHeight, vscode.ConfigurationTarget.Workspace);
+
+                // Re-render so blocks get the new max-height
+                updatePanel();
+
+            } else if (message.command === 'saveState') {
+                // user wants to save JSON of current block results
+                handleSaveState();
+            } else if (message.command === 'scrollToBlock') {
+                // This message is from the extension itself to the webview (we don’t do anything here).
+                // The webview code uses `scrollIntoView()` directly in its own script.
+                // We do not need to handle it on the extension side. 
             }
         });
 
+        // onDidDispose
         currentPanel.onDidDispose(() => {
             currentPanel = undefined;
             nodeGlobalState = {};
@@ -83,7 +126,7 @@ async function ensurePanelAndEnvs() {
 }
 
 // ---------------------------------------------
-// Start session: parse code blocks & detect environment from fence
+// Start session: parse code blocks & detect environment
 // ---------------------------------------------
 async function startSessionHandler() {
     const editor = vscode.window.activeTextEditor;
@@ -94,34 +137,55 @@ async function startSessionHandler() {
 
     await ensurePanelAndEnvs();
 
+    // Attempt to load the *latest* state JSON for this MD file
+    const docPath = editor.document.uri.fsPath; // full path to .md
+    const existingState = tryLoadPreviousState(docPath);
+
     // Parse out code blocks from the markdown
     const markdown = editor.document.getText();
     const md = new MarkdownIt();
     const tokens = md.parse(markdown, {});
     const codeBlocks = extractCodeBlocks(tokens);
 
-    // Initialize session with a Map to track block executions
-    const blockMap = new Map<string, CodeBlockExecution>();
-    codeBlocks.forEach((block) => {
-        const blockId = `block-${block.position}`;
-        blockMap.set(blockId, {
-            ...block,
-            metadata: {
-                status: 'pending',
-                timestamp: Date.now(),
-            },
-            outputs: []
+    // If we found previously saved state, we can restore it. Otherwise, create fresh session
+    if (existingState) {
+        sessionState = existingState;
+        // Make sure we still track new code blocks if they appear
+        codeBlocks.forEach((block) => {
+            const blockId = `block-${block.position}`;
+            if (!sessionState!.codeBlocks.has(blockId)) {
+                sessionState!.codeBlocks.set(blockId, {
+                    ...block,
+                    metadata: { status: 'pending', timestamp: Date.now() },
+                    outputs: []
+                });
+            }
         });
-    });
+        vscode.window.showInformationMessage('Previous session state loaded.');
+    } else {
+        // Initialize session with a Map to track block executions
+        const blockMap = new Map<string, CodeBlockExecution>();
+        codeBlocks.forEach((block) => {
+            const blockId = `block-${block.position}`;
+            blockMap.set(blockId, {
+                ...block,
+                metadata: {
+                    status: 'pending',
+                    timestamp: Date.now(),
+                },
+                outputs: []
+            });
+        });
 
-    sessionState = {
-        codeBlocks: blockMap,
-        currentBlockIndex: 0,
-        runCount: 0
-    };
+        sessionState = {
+            codeBlocks: blockMap,
+            currentBlockIndex: 0,
+            runCount: 0
+        };
+        vscode.window.showInformationMessage('New session started! Use "Run Code Block" or CodeLens to run code.');
+    }
 
     updatePanel();
-    vscode.window.showInformationMessage('Session started! Use "Run Code Block" or CodeLens to run code.');
 }
 
 // ---------------------------------------------
@@ -151,7 +215,6 @@ async function runBlockHandler(range: vscode.Range) {
             }
         }
     }
-
     if (!env) {
         env = '';
     }
@@ -196,38 +259,43 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
             runCount: 1,
         };
     }
+
     // Replace any previous execution for this block
     sessionState.codeBlocks.set(blockId, blockExecution);
 
-    // Force a quick update so the panel shows a fresh block container
-    updatePanel(); // This ensures the block's "container" is in the DOM
+    // Force an update so the webview gets the new block container
+    updatePanel();
+
+    // -----------------------
+    // auto-scroll/focus on this block
+    // Once the block container is created, we can instruct the webview to scroll
+    currentPanel?.webview.postMessage({
+        command: 'scrollToBlock',
+        blockId
+    });
 
     // Handle partial streaming
     const onPartialOutput = (partialOutput: CellOutput) => {
         // 1) Store in session state
         const b = sessionState?.codeBlocks.get(blockId);
         if (!b) return;
-        // If it's an image, replace any existing image in `b.outputs`
+
         if (partialOutput.type === 'image') {
             const oldImageIndex = b.outputs.findIndex(o => o.type === 'image');
             if (oldImageIndex !== -1) {
-                // Overwrite the previously stored image
                 b.outputs[oldImageIndex] = partialOutput;
             } else {
-                // If none exists yet, just push
                 b.outputs.push(partialOutput);
             }
         } else {
-            // For text, error, etc., just append
             b.outputs.push(partialOutput);
         }
 
-
-        // 2) Post a message to the webview to update *just* this block in real time
+        // 2) Post a message to the webview to update just this block
         currentPanel?.webview.postMessage({
-            command: 'partialOutput',   
-            blockId,                   
-            output: partialOutput       
+            command: 'partialOutput',
+            blockId,
+            output: partialOutput
         });
     };
 
@@ -255,12 +323,12 @@ async function runSingleCodeBlock(code: string, position: number, env: string) {
         ];
         blockExecution.metadata.status = 'error';
     } finally {
-        // Remove from running processes if needed
         runningProcesses.delete(blockId);
     }
 
     blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
-    // Final re-render to show the "finished" state
+
+    // Final re-render
     updatePanel();
 }
 
@@ -294,11 +362,132 @@ function terminateBlockHandler(range: vscode.Range) {
             });
         }
 
-        updatePanel();  // Re-render to reflect cancellation
+        updatePanel();
         vscode.window.showInformationMessage(`Terminated execution of block at line ${range.start.line}.`);
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to terminate block: ${String(err)}`);
     }
+}
+
+// ---------------------------------------------
+// Save the current sessionState to JSON
+// invoked from the webview's "Save Results" button
+// ---------------------------------------------
+function handleSaveState() {
+    if (!sessionState) {
+        vscode.window.showWarningMessage('No session state to save.');
+        return;
+    }
+
+    // Example: <md-filename>-state-<yyyyMMdd>-<hhmm>.json
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+    const mdFullPath = editor.document.uri.fsPath;
+    const baseName = path.basename(mdFullPath, '.md');
+
+    const now = new Date();
+    const yyyymmdd = now
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, '');
+    const hhmm = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+    const fileName = `${baseName}-state-${yyyymmdd}-${hhmm}.json`;
+
+    // By default, save to the same folder as the .md
+    let defaultFolder = path.dirname(mdFullPath);
+
+    // If we already have a savedResultsPath in .vscode settings, we can use that
+    if (savedResultsPath && fs.existsSync(savedResultsPath)) {
+        defaultFolder = savedResultsPath;
+    }
+
+    const fullSavePath = path.join(defaultFolder, fileName);
+
+    // Write out the sessionState to a JSON object
+    const dataToSave: any = serializeSessionState(sessionState);
+
+    try {
+        fs.writeFileSync(fullSavePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
+        vscode.window.showInformationMessage(`Results saved to: ${fullSavePath}`);
+
+        // Update user workspace setting for "savedResultsPath" if not yet stored
+        const config = vscode.workspace.getConfiguration('mdrun');
+        config.update('savedResultsPath', defaultFolder, vscode.ConfigurationTarget.Workspace);
+        savedResultsPath = defaultFolder;
+    } catch (err) {
+        vscode.window.showErrorMessage(`Failed to save results: ${String(err)}`);
+    }
+}
+
+// A helper function to remove any circular references
+// and store codeBlocks as plain arrays for JSON
+function serializeSessionState(state: SessionState) {
+    const blocksArray = Array.from(state.codeBlocks.entries()).map(([blockId, exec]) => ({
+        blockId,
+        content: exec.content,
+        info: exec.info,
+        position: exec.position,
+        metadata: exec.metadata,
+        outputs: exec.outputs
+    }));
+    return {
+        currentBlockIndex: state.currentBlockIndex,
+        runCount: state.runCount,
+        codeBlocks: blocksArray
+    };
+}
+
+// Try to load the most recent JSON state for the given .md file
+// Looks for <md-filename>-state-YYYYMMDD-HHMM.json in the same folder
+function tryLoadPreviousState(mdFullPath: string): SessionState | null {
+    const dir = path.dirname(mdFullPath);
+    const baseName = path.basename(mdFullPath, '.md');
+    const re = new RegExp(`^${baseName}-state-(\\d{8})-(\\d{4})\\.json$`);
+
+    if (!fs.existsSync(dir)) {
+        return null;
+    }
+    const files = fs.readdirSync(dir).filter((f) => re.test(f));
+    if (files.length === 0) {
+        return null;
+    }
+
+    // Sort files by date/time descending
+    files.sort((a, b) => {
+        const matchA = a.match(re)!;
+        const matchB = b.match(re)!;
+        const dateA = matchA[1] + matchA[2]; // yyyymmddhhmm
+        const dateB = matchB[1] + matchB[2];
+        return dateB.localeCompare(dateA); // descending
+    });
+
+    const latestFile = path.join(dir, files[0]);
+    try {
+        const raw = fs.readFileSync(latestFile, 'utf-8');
+        const savedState = JSON.parse(raw);
+        return deserializeSessionState(savedState);
+    } catch (err) {
+        console.error('Failed to load previous state:', err);
+        return null;
+    }
+}
+
+function deserializeSessionState(savedObj: any): SessionState {
+    const blockMap = new Map<string, CodeBlockExecution>();
+    for (const item of savedObj.codeBlocks) {
+        blockMap.set(item.blockId, {
+            content: item.content,
+            info: item.info,
+            position: item.position,
+            metadata: item.metadata,
+            outputs: item.outputs
+        });
+    }
+    return {
+        currentBlockIndex: savedObj.currentBlockIndex,
+        runCount: savedObj.runCount,
+        codeBlocks: blockMap
+    };
 }
 
 // ---------------------------------------------
@@ -335,7 +524,6 @@ function listVirtualenvs(): { label: string; path: string }[] {
         for (const d of subdirs) {
             if (d.isDirectory()) {
                 const envName = d.name;
-                // On Unix-like systems, the python executable is usually in <env>/bin/python
                 const pyPath = path.join(venvFolder, envName, 'bin', 'python');
                 if (fs.existsSync(pyPath)) {
                     out.push({
@@ -388,7 +576,7 @@ function listCondaEnvs(): Promise<{ label: string; path: string }[]> {
 }
 
 // ---------------------------------------------
-// Extract code blocks that are python/javascript
+// Extract code blocks
 // ---------------------------------------------
 function extractCodeBlocks(tokens: any[]): CodeBlock[] {
     const blocks: CodeBlock[] = [];
@@ -421,7 +609,7 @@ function updatePanel() {
 }
 
 // ---------------------------------------------
-// Webview HTML
+// Build the Webview HTML (includes new top widgets)
 // ---------------------------------------------
 function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
     // Build <option> tags from discoveredEnvironments
@@ -448,18 +636,18 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
                 ? `Output [${block.metadata.runNumber}]`
                 : 'Output [?]';
 
-            // We'll give each block a unique container ID: "result-block-block-XX"
-            // so we can dynamically append partial output for that block later.
+            // block container ID
             const blockContainerId = `result-block-${"block-" + block.position}`;
 
-            // Pre-render existing outputs (in case of re-runs or finished states)
+            // Pre-render existing outputs
             const outputsHtml = block.outputs
                 .map((output) => createOutputHtml(output))
                 .join('\n');
 
             return `
-                <div class="block-container ${statusClass}" 
-                     id="${blockContainerId}">
+                <div class="block-container ${statusClass}"
+                     id="${blockContainerId}"
+                     style="max-height: ${maxResultHeight}px; overflow-y: auto;">
                     <div class="block-header">
                         <span class="status">${runLabel}</span>
                         <span class="time">${executionTime}</span>
@@ -471,14 +659,23 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
         })
         .join('\n');
 
-    // Wrap everything in a minimal HTML doc
+    // The top row now has:
+    //  (1) Python env dropdown
+    //  (2) "Max result height" input
+    //  (3) "Save Results" button
+    const editor = vscode.window.activeTextEditor;
+    let panel_title = "Code Execution Results";
+    if (editor) {
+        const mdFullPath = editor.document.uri.fsPath;
+        panel_title = path.basename(mdFullPath, '.md') + ".md Results";
+    }
+    
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <title>Code Execution Results</title>
+    <title>${panel_title}</title>
     <style>
-        /* your styles, same as before */
         body {
             padding: 20px;
             font-family: var(--vscode-editor-font-family);
@@ -486,14 +683,24 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
             color: var(--vscode-editor-foreground);
             background-color: var(--vscode-editor-background);
         }
-        .env-picker {
+        .panel-top {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
             margin-bottom: 1em;
         }
+        .panel-top label {
+            margin-right: 0.3em;
+        }
+        select, input, button {
+            font-size: 0.9rem;
+        }
+
         .block-container {
             margin-bottom: 20px;
             border: 1px solid var(--vscode-panel-border);
             border-radius: 4px;
-            overflow: hidden;
+            overflow: hidden; /* We'll rely on inline style for max-height + scroll */
         }
         .block-header {
             padding: 5px 10px;
@@ -549,9 +756,16 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
     </style>
 </head>
 <body>
-    <div class="env-picker">
+    <div class="panel-top">
+        <!-- add the Max result height input -->
         <label for="envSelect"><strong>Python Interpreter:</strong></label>
         <select id="envSelect">${optionsHtml}</select>
+
+        <label for="maxHeightInput"><strong>Max result height (px):</strong></label>
+        <input type="number" id="maxHeightInput" min="50" step="10" value="${maxResultHeight}" />
+
+        <!-- add a "Save Results" button -->
+        <button id="saveButton">Save Results</button>
     </div>
 
     ${outputHtml}
@@ -559,15 +773,34 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
     <script>
         const vscode = acquireVsCodeApi();
 
+        // Env dropdown
         const envSelect = document.getElementById('envSelect');
-        if (envSelect) {
-            envSelect.addEventListener('change', (event) => {
-                vscode.postMessage({
-                    command: 'changeEnv',
-                    pythonPath: event.target.value
-                });
+        envSelect?.addEventListener('change', (event) => {
+            vscode.postMessage({
+                command: 'changeEnv',
+                pythonPath: event.target.value
             });
-        }
+        });
+
+        // Listen for user updates to "maxHeightInput"
+        const maxHeightInput = document.getElementById('maxHeightInput');
+        maxHeightInput?.addEventListener('change', (event) => {
+            const newVal = parseInt(event.target.value, 10);
+            if (!isNaN(newVal) && newVal > 0) {
+                vscode.postMessage({
+                    command: 'changeMaxHeight',
+                    value: newVal
+                });
+            }
+        });
+
+        // "Save Results" button
+        const saveButton = document.getElementById('saveButton');
+        saveButton?.addEventListener('click', () => {
+            vscode.postMessage({
+                command: 'saveState'
+            });
+        });
 
         // Listen for partial outputs from extension
         window.addEventListener('message', event => {
@@ -575,6 +808,9 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
             if (message.command === 'partialOutput') {
                 const { blockId, output } = message;
                 updateBlockOutput(blockId, output);
+            }
+            else if (message.command === 'scrollToBlock') {
+                scrollToBlock(message.blockId);
             }
         });
 
@@ -602,8 +838,6 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
                 outputsDiv.appendChild(textDiv);
 
             } else if (output.type === 'image') {
-                // Update or create a single <img> to represent the live plot
-                // We'll wrap it in a .image-output if we want consistent styling
                 let imgWrapper = outputsDiv.querySelector('.image-output');
                 if (!imgWrapper) {
                     imgWrapper = document.createElement('div');
@@ -637,6 +871,15 @@ function getWebviewContent(blocks: Map<string, CodeBlockExecution>): string {
                     richDiv.textContent = output.content;
                 }
                 outputsDiv.appendChild(richDiv);
+            }
+        }
+
+        // Scroll/focus on the specified block
+        function scrollToBlock(blockId) {
+            const containerId = 'result-block-' + blockId;
+            const blockContainer = document.getElementById(containerId);
+            if (blockContainer) {
+                blockContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
     </script>

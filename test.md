@@ -17,7 +17,7 @@ x = np.linspace(0, 10, 100)
 y = np.sin(x)
 
 # Create a plot
-plt.figure(figsize=(8, 4))
+plt.figure(figsize=(12, 10))
 plt.plot(x, y, 'b-', label='sin(x)')
 plt.title('Sine Wave')
 plt.xlabel('x')
@@ -59,7 +59,7 @@ print("\nAll processing complete!")
 ```python
 import pandas as pd
 import numpy as np
-
+import time
 # Create a sample DataFrame
 df = pd.DataFrame({
     'A': np.random.randn(5),
@@ -69,7 +69,7 @@ df = pd.DataFrame({
 
 # Display the DataFrame
 print(df)
-
+time.sleep(1)
 # Create a scatter plot
 plt.figure(figsize=(8, 4))
 plt.scatter(df['A'], df['C'], alpha=0.5)
@@ -81,6 +81,7 @@ plt.grid(True)
 
 ## Streaming Plot Test
 ```python
+#| this is important
 import matplotlib.pyplot as plt
 import numpy as np
 from IPython import display
@@ -95,7 +96,7 @@ x_data = []
 y_data = []
 
 # Simulate streaming data
-for i in range(20):
+for i in range(30):
     # Add new data point
     x_data.append(i)
     y_data.append(np.sin(i * 0.1) + np.random.normal(0, 0.1))
