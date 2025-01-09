@@ -2,6 +2,38 @@
 
 **Drafty** is a Visual Studio Code extension that lets you **run code blocks** embedded in Markdown files, track **session state** (variables, outputs) across multiple runs, and **save / load** execution results to JSON files.
 
+## Quick Start
+
+1. **Install the Extension**
+   - Install from VS Code marketplace by searching for "Drafty Runner"
+   - Or use the command: `code --install-extension fit-cnice.drafty`
+
+2. **Create a New Markdown File**
+   ```markdown
+   # My First Drafty Document
+   
+   ```python
+   x = 42
+   print(f"The answer is {x}")
+   ```
+   ```
+
+3. **Start a Session**
+   - Open the Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+   - Type "drafty: Start Markdown Code Session"
+   - Select your preferred Python environment in opened panel
+
+4. **Run Your Code**
+   - Now you can use a "Run Code Block" button above each code block
+   - Click it to execute the code
+   - Results will appear in the session panel
+
+5. **Save Your Results**
+   - Click the "Save"/"Save as" button in the results panel to store outputs
+   - Use "Load Results" to restore previous session states
+
+>**Remember: Always start a session before running code blocks. For more features, check out the detailed documentation below**.
+
 ## Key Features
 
 1. **Run Code Blocks in Markdown**  
