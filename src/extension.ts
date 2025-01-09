@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as MarkdownIt from 'markdown-it';
+import markdownit from 'markdown-it'
 import { CodeBlock, CodeBlockExecution, CellOutput } from './types';
 import { PythonRunner } from './pythonRunner';
 import { EnvironmentManager } from './env_setup';
@@ -241,7 +241,7 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
 
     // Parse code blocks
     const markdown = editor.document.getText();
-    const md = new MarkdownIt();
+    const md = markdownit();
     const tokens = md.parse(markdown, {});
     const codeBlocks = extractCodeBlocks(tokens);
 
@@ -324,7 +324,7 @@ Please run "Drafty: Start Session" first.`);
 
     // Figure out the fence's info (language)
     const text = editor.document.getText();
-    const md = new MarkdownIt();
+    const md = markdownit();
     const tokens = md.parse(text, {});
     let env: string | undefined;
     for (let i = 0; i < tokens.length; i++) {
@@ -731,7 +731,7 @@ class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
     ): vscode.CodeLens[] {
         const codeLenses: vscode.CodeLens[] = [];
         const text = document.getText();
-        const md = new MarkdownIt();
+        const md = markdownit();
         const tokens = md.parse(text, {});
 
         for (let i = 0; i < tokens.length; i++) {

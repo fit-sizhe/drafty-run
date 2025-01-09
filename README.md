@@ -12,10 +12,10 @@
    ```markdown
    # My First Drafty Document
    
-   ```python
+   \`\`\`python
    x = 42
    print(f"The answer is {x}")
-   ```
+   \`\`\`
    ```
 
 3. **Start a Session**

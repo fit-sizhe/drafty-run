@@ -5,20 +5,13 @@ yarn-debug.log*
 yarn-error.log*
 tests/*.json
 # Build output
-out/
-dist/
-build/
+out
+dist
+build
 *.vsix
 
 # TypeScript
 *.tsbuildinfo
-
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
 
 # Operating System
 .DS_Store
