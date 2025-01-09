@@ -44,24 +44,77 @@ export class EnvironmentManager {
     private async gatherEnvironments(): Promise<Environment[]> {
         const results: Environment[] = [];
 
-        // 1) Gather from conda env list
         const condaEnvs = await this.listCondaEnvs();
         results.push(...condaEnvs);
 
-        // 2) Gather from ~/.virtualenvs
         const venvs = this.listVirtualenvs();
         results.push(...venvs);
 
-        // If none found, fallback to "python3"
+
+        const systemPythons = await this.listSystemPythons();
+        results.push(...systemPythons);
+        console.log(results)
+
+        // If none found, fallback to "python3" or "python.exe" on Windows
         if (results.length === 0) {
-            results.push({
-                label: 'Default: python3',
-                path: 'python3'
-            });
+            if (process.platform === 'win32') {
+                results.push({
+                    label: 'Default: python.exe',
+                    path: 'python.exe'
+                });
+            } else {
+                results.push({
+                    label: 'Default: python3',
+                    path: 'python3'
+                });
+            }
         }
-        return results;
+
+        // Remove duplicates by path
+        const unique = new Map<string, Environment>();
+        for (const env of results) {
+            unique.set(env.path, env);
+        }
+        return Array.from(unique.values());
     }
 
+    /**
+     * Attempt to list system python installations by calling:
+     *   - "where python" on Windows
+     *   - "which -a python3 python" on macOS/Linux
+     */
+    private async listSystemPythons(): Promise<Environment[]> {
+        return new Promise((resolve) => {
+            const isWindows = process.platform === 'win32';
+            const results: Environment[] = [];
+
+            const cmd = isWindows
+                ? 'where python'
+                : 'which -a python3 python';  // On Unix, this tries both python3 and python
+
+            exec(cmd, (error, stdout) => {
+                if (!error) {
+                    // Split lines
+                    console.log(stdout)
+                    const lines = stdout.trim().split(/\r?\n/);
+                    for (const line of lines) {
+                        if (fs.existsSync(line)) {
+                            const parentDir = path.basename(path.dirname(line)); 
+                            const binName = path.basename(line);
+                            results.push({
+                                label: `System [${parentDir}]: ${binName}`,
+                                path: line,
+                            });
+                        }
+                    }
+                }
+                resolve(results);
+            });
+        });
+    }
+
+    
+    // Scan virtualenv directories for python executables
     private listVirtualenvs(): Environment[] {
         const out: Environment[] = [];
         const homeDir = os.homedir();
@@ -75,11 +128,12 @@ export class EnvironmentManager {
             // Windows: check %USERPROFILE%\Envs
             venvLocations.push(path.join(homeDir, 'Envs'));
         } else if (platform === 'darwin') {
-            // macOS: check ~/Library/Python/[version]/lib/python/site-packages
-            // Also check ~/.virtualenvs for compatibility
+            // macOS: check multiple typical locations
             const pythonVersions = ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12'];
             pythonVersions.forEach(version => {
-                venvLocations.push(path.join(homeDir, 'Library', 'Python', version, 'lib', 'python', 'site-packages'));
+                venvLocations.push(
+                    path.join(homeDir, 'Library', 'Python', version, 'lib', 'python', 'site-packages')
+                );
             });
             venvLocations.push(path.join(homeDir, '.virtualenvs'));
         } else {
@@ -111,89 +165,135 @@ export class EnvironmentManager {
         return out;
     }
 
-    private async findShell(): Promise<string> {
-        if (process.platform === 'win32') {
-            return 'cmd.exe';
-        }
-        
-        // Try to find zsh or bash
-        return new Promise((resolve) => {
-            // Try zsh first
-            exec('which zsh', (error, stdout) => {
-                if (!error && stdout.trim()) {
-                    resolve("zsh");
-                } else {
-                    // Try bash if zsh not found
-                    exec('which bash', (error, stdout) => {
-                        if (!error && stdout.trim()) {
-                            resolve("bash");
-                        } else {
-                            // Fallback to sh if neither found
-                            resolve('sh');
-                        }
-                    });
-                }
-            });
-        });
-    }
-
-    private listCondaEnvs(): Promise<Environment[]> {
+    // Identify conda envs by running conda env list --json
+    private async listCondaEnvs(): Promise<Environment[]> {
         return new Promise(async (resolve) => {
-            const shell = await this.findShell();
 
-            // Build the command based on shell type
-            let cmd: string;
             const isWindows = process.platform === 'win32';
-            
+
             if (isWindows) {
-                cmd = 'conda env list --json';
+                const condaPath = await this.findWinConda();
+                if (!condaPath) {
+                    // If conda is not found anywhere, just resolve([])
+                    console.error('Could not find conda.exe on Windows');
+                    return resolve([]);
+                }
+                // Build the command using the absolute path to conda.exe
+                const cmd = `"${condaPath}" env list --json`;
+                exec(cmd, (error, stdout) => {
+                    if (error) {
+                        console.error('Could not run conda env list:', error);
+                        return resolve([]);
+                    }
+                    resolve(this.parseCondaEnvs(stdout));
+                });
             } else {
                 // On Unix-like systems, try to source the appropriate RC file
+                const shell = await this.findShell();
+                let cmd: string;
                 if (shell === 'zsh') {
                     cmd = 'source ~/.zshrc 2>/dev/null || true; conda env list --json';
                 } else if (shell === 'bash') {
                     cmd = 'source ~/.bashrc 2>/dev/null || true; conda env list --json';
                 } else {
-                    cmd = 'conda env list --json'; // fallback for sh
+                    cmd = 'conda env list --json'; // fallback for 'sh'
                 }
-            }
-            
-            const options = { shell };
-
-            exec(cmd, options, (error, stdout, stderr) => {
-                if (error) {
-                    console.error('Could not run conda env list:', error);
-                    return resolve([]);
-                }
-                try {
-                    const data = JSON.parse(stdout);
-                    if (Array.isArray(data.envs)) {
-                        const results: Environment[] = [];
-                        for (const envPath of data.envs) {
-                            const envName = path.basename(envPath);
-                            const label = `conda: ${envName}`;
-                            const isWindows = process.platform === 'win32';
-                            let pythonPath;
-                            
-                            if (isWindows) {
-                                pythonPath = path.join(envPath, 'python.exe');
-                            } else {
-                                pythonPath = path.join(envPath, 'bin', 'python');
-                            }
-
-                            if (fs.existsSync(pythonPath)) {
-                                results.push({ label, path: pythonPath });
-                            } else {
-                                // Fallback to environment path if python executable not found
-                                results.push({ label, path: envPath });
-                            }
-                        }
-                        return resolve(results);
+                const options = { shell };
+                exec(cmd, options, (error, stdout) => {
+                    if (error) {
+                        console.error('Could not run conda env list:', error);
+                        return resolve([]);
                     }
-                } catch (parseErr) {
-                    console.error('Failed to parse conda --json output:', parseErr);
+                    resolve(this.parseCondaEnvs(stdout));
+                });
+            }
+        });
+    }
+
+    // parse conda --json output
+    private parseCondaEnvs(stdout: string): Environment[] {
+        try {
+            const data = JSON.parse(stdout);
+            if (Array.isArray(data.envs)) {
+                const results: Environment[] = [];
+                for (const envPath of data.envs) {
+                    const envName = path.basename(envPath);
+                    const label = `conda: ${envName}`;
+                    const pythonPath = process.platform === 'win32'
+                        ? path.join(envPath, 'python.exe')
+                        : path.join(envPath, 'bin', 'python');
+
+                    if (fs.existsSync(pythonPath)) {
+                        results.push({ label, path: pythonPath });
+                    } else {
+                        // fallback if python is missing
+                        results.push({ label, path: envPath });
+                    }
                 }
-                return resolve([]);
+                return results;
+            }
+        } catch (parseErr) {
+            console.error('Failed to parse conda --json output:', parseErr);
+        }
+        return [];
+    }
+
+    private async findWinConda(): Promise<string | null> {
+        return new Promise((resolve) => {
+            // Try 'where conda' first
+            exec('where conda', (error, stdout) => {
+                if (!error) {
+                    // If successful, 'where conda' may return multiple lines — pick the first
+                    const lines = stdout.trim().split(/\r?\n/);
+                    for (const line of lines) {
+                        if (fs.existsSync(line)) {
+                            return resolve(line); // found a valid conda.exe
+                        }
+                    }
+                }
+                
+                // Fallback to known default locations
+                const fallbackPaths = [
+                    path.join(os.homedir(), 'anaconda3', 'Scripts', 'conda.exe'),
+                    path.join(os.homedir(), 'miniconda3', 'Scripts', 'conda.exe'),
+                    'C:\\ProgramData\\Anaconda3\\Scripts\\conda.exe',
+                    'C:\\Program Files\\Anaconda3\\Scripts\\conda.exe',
+                    'C:\\Program Files (x86)\\Anaconda3\\Scripts\\conda.exe',
+                ];
+    
+                for (const fp of fallbackPaths) {
+                    if (fs.existsSync(fp)) {
+                        return resolve(fp);
+                    }
+                }
+    
+                // If not found, return null
+                return resolve(null);
+            });
+        });
+    }    
+
+    // Find which shell to use for sourcing environment files
+    private async findShell(): Promise<string> {
+        if (process.platform === 'win32') {
+            return 'cmd.exe';
+        }
+        return new Promise((resolve) => {
+            // Try zsh first
+            exec('which zsh', (error, stdout) => {
+                if (!error && stdout.trim()) {
+                    resolve('zsh');
+                } else {
+                    // Try bash
+                    exec('which bash', (error2, stdout2) => {
+                        if (!error2 && stdout2.trim()) {
+                            resolve('bash');
+                        } else {
+                            // Fallback
+                            resolve('sh');
+                        }
+                    });
+                }
             });
         });
     }
