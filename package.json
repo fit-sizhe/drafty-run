@@ -14,6 +14,23 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Drafty",
+      "properties": {
+        "drafty.defaultPath": {
+          "type": "string",
+          "description": "Default path used when saving results JSON with the 'Save' button.",
+          "default": ""
+        },
+        "drafty.savingRule": {
+          "type": "string",
+          "enum": ["latest-only", "keep-all"],
+          "description": "If set to 'latest-only', any old JSON files for a .md are removed before saving new results. Otherwise keep all files.",
+          "default": "keep-all"
+        }
+      }
+    },
     "commands": [
       {
         "command": "drafty.startSession",

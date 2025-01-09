@@ -8,6 +8,11 @@ export interface SessionState {
     runCount: number;
 }
 
+export interface LoadResult {
+  session: SessionState;
+  filePath: string;
+}
+
 export class StateManager {
     private static instance: StateManager;
 
@@ -69,7 +74,7 @@ export class StateManager {
     }
 
     // Try to load the most recent JSON state for the given .md file
-    tryLoadPreviousState(mdFullPath: string): SessionState | undefined {
+    tryLoadPreviousState(mdFullPath: string): LoadResult | undefined {
         const dir = path.dirname(mdFullPath);
         const baseName = path.basename(mdFullPath, '.md');
         const re = new RegExp(`^${baseName}-state-(\\d{8})-(\\d{4})\\.json$`);
@@ -95,14 +100,14 @@ export class StateManager {
         try {
             const raw = fs.readFileSync(latestFile, 'utf-8');
             const savedState = JSON.parse(raw);
-            return this.deserializeSessionState(savedState);
+            return { session:this.deserializeSessionState(savedState), filePath: latestFile };
         } catch (err) {
             console.error('Failed to load previous state:', err);
             return undefined;
         }
     }
 
-    private serializeSessionState(state: SessionState): any {
+    serializeSessionState(state: SessionState): any {
         const blocksArray = Array.from(state.codeBlocks.entries()).map(([blockId, exec]) => ({
             blockId,
             content: exec.content,
@@ -118,7 +123,7 @@ export class StateManager {
         };
     }
 
-    private deserializeSessionState(savedObj: any): SessionState {
+    deserializeSessionState(savedObj: any): SessionState {
         const blockMap = new Map<string, CodeBlockExecution>();
         for (const item of savedObj.codeBlocks) {
             blockMap.set(item.blockId, {

@@ -1,15 +1,25 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as MarkdownIt from 'markdown-it';
 import { CodeBlock, CodeBlockExecution, CellOutput } from './types';
 import { PythonRunner } from './pythonRunner';
 import { EnvironmentManager } from './env_setup';
-import { StateManager, SessionState } from './state_io';
+import { StateManager } from './state_io';
 import { WebviewManager } from './webview';
-import { clear } from 'console';
 
 // Keep track of running processes to allow termination
 const runningProcesses: Map<string, any> = new Map();
+
+// docPath -> default folder path for JSON
+const docDefaultPaths = new Map<string, string>();
+
+function setDefaultPathForDoc(docPath: string, newFolder: string) {
+    docDefaultPaths.set(docPath, newFolder);
+}
+function getDefaultPathForDoc(docPath: string): string | undefined {
+    return docDefaultPaths.get(docPath);
+}
 
 // Interface for language runners
 export interface ILanguageRunner {
@@ -23,17 +33,9 @@ export interface ILanguageRunner {
         process: any;
         promise: Promise<{ outputs: CellOutput[] }>;
     };
-    /**
-     * Clear *only* the runner's state for the given docPath,
-     */
     clearState(docPath: string): void;
-
-    /**
-     * Completely remove (dispose) the runner instance for docPath from memory.
-     */
     disposeRunner(docPath: string): void;
 }
-
 
 // Adapter to make PythonRunner match ILanguageRunner interface
 class PythonRunnerAdapter implements ILanguageRunner {
@@ -132,18 +134,6 @@ export function activate(context: vscode.ExtensionContext) {
     StateManager.getInstance();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Multi-file session & panel management
-////////////////////////////////////////////////////////////////////////////////
-
-/**
- * For each opened Markdown file, we keep:
- * - a dedicated session (SessionState) in the StateManager
- * - a dedicated WebviewPanel in the WebviewManager
- *
- * By default, StateManager and WebviewManager were singletons. 
- * Now we store state/panels by 'docPath' (the absolute path to the .md file).
- */
 function getDocPath(editor: vscode.TextEditor | undefined): string | undefined {
     if (!editor || editor.document.languageId !== 'markdown') {
         return undefined;
@@ -178,9 +168,18 @@ async function handleWebviewMessage(
             updatePanel(docPath);
             break;
 
-        case 'saveState':
-            handleSaveState(docPath);
+        case 'loadResults': {
+            await handleLoadResults(docPath, panel);
             break;
+        }
+        case 'saveAs': {
+            await handleSaveAs(docPath);
+            break;
+        }
+        case 'save': {
+            await handleSave(docPath);
+            break;
+        }
 
         case 'clearState': {
             // Clear runner's global Python variables
@@ -248,7 +247,14 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
 
     if (existingState) {
         // Load previous session data
-        stateManager.setSession(mdFullPath, existingState);
+        stateManager.setSession(mdFullPath, existingState.session);
+        const panel = WebviewManager.getInstance().getPanel(mdFullPath);
+        if (panel) {
+            panel.webview.postMessage({
+                command: 'updateLoadedPath',
+                path: existingState.filePath
+            });
+        }
 
         // Add new code blocks that might not exist in the old state
         const currSession = stateManager.getSession(mdFullPath)!;
@@ -514,29 +520,174 @@ Please run "Drafty: Start Session" first.`);
     }
 }
 
-/**
- * Called when user clicks "Save Results" in the webview.
- * We do Approach B: If there's no session for that doc, we show an error.
- */
-function handleSaveState(mdFullPath: string) {
-    const stateManager = StateManager.getInstance();
-    if (!stateManager.hasSession(mdFullPath)) {
-        vscode.window.showErrorMessage(`No active session for file: ${path.basename(mdFullPath)}. 
-Please run "Drafty: Start Session" first.`);
-        return;
+async function handleLoadResults(docPath: string, panel: vscode.WebviewPanel) {
+    // Open a file dialog
+    const uris = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { 'JSON Files': ['json'] },
+        openLabel: 'Select JSON to Load'
+    });
+    if (!uris || uris.length === 0) {
+        return; // user canceled
     }
 
-    const session = stateManager.getSession(mdFullPath);
-    if (!session) {
-        vscode.window.showErrorMessage(`No session found for file: ${mdFullPath}`);
-        return;
-    }
+    const selectedUri = uris[0];
+    const selectedFilePath = selectedUri.fsPath;
+    const folder = path.dirname(selectedFilePath);
+    setDefaultPathForDoc(docPath, folder);
 
+    // Read the JSON
+    let loadedData: any;
     try {
-        const savePath = stateManager.saveSession(mdFullPath, session);
-        vscode.window.showInformationMessage(`Results saved to: ${savePath}`);
+        const raw = fs.readFileSync(selectedFilePath, 'utf-8');
+        loadedData = JSON.parse(raw);
     } catch (err) {
-        vscode.window.showErrorMessage(`Failed to save results: ${String(err)}`);
+        vscode.window.showErrorMessage(`Failed to parse JSON: ${err}`);
+        return;
+    }
+
+    // Convert that loadedData to a SessionState (or merge into session).
+    const stateManager = StateManager.getInstance();
+    const newSession = stateManager.deserializeSessionState(loadedData);
+    stateManager.setSession(docPath, newSession);
+
+    updatePanel(docPath);
+
+    // Send a message back to the webview to show the loaded file
+    panel.webview.postMessage({
+        command: 'updateLoadedPath',
+        path: selectedFilePath
+    });
+
+    vscode.window.showInformationMessage('Loaded results from JSON!');
+}
+
+async function handleSaveAs(docPath: string) {
+    const saveUri = await vscode.window.showSaveDialog({
+        filters: { 'JSON Files': ['json'] },
+        saveLabel: 'Save Results As'
+    });
+    if (!saveUri) {
+        return; // user canceled
+    }
+
+    const saveFilePath = saveUri.fsPath;
+    const folder = path.dirname(saveFilePath);
+    setDefaultPathForDoc(docPath, folder);
+
+    const stateManager = StateManager.getInstance();
+    const session = stateManager.getSession(docPath);
+    if (!session) {
+        vscode.window.showErrorMessage('No session to save. Please run or load results first.');
+        return;
+    }
+
+    const dataToSave = stateManager.serializeSessionState(session);
+    try {
+        fs.writeFileSync(saveFilePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
+    } catch (err) {
+        vscode.window.showErrorMessage(`Failed to save JSON: ${err}`);
+        return;
+    }
+
+    const panel = WebviewManager.getInstance().getPanel(docPath);
+    if (panel) {
+        panel.webview.postMessage({
+            command: 'updateLoadedPath',
+            path: saveFilePath
+        });
+    }
+    
+
+    vscode.window.showInformationMessage(`Results saved to: ${saveFilePath}`);
+}
+
+async function handleSave(docPath: string) {
+
+    const stateManager = StateManager.getInstance();
+    const session = stateManager.getSession(docPath);
+    if (!session) {
+        vscode.window.showErrorMessage('No session to save. Please run or load results first.');
+        return;
+    }
+
+    // If defaultPath is empty, fallback to doc's folder
+    let targetFolder = getDefaultPathForDoc(docPath);
+    if (!targetFolder) {
+        // If none stored, fallback to the extension config or doc folder
+        const config = vscode.workspace.getConfiguration('drafty');
+        const globalDefaultPath = config.get<string>('defaultPath') || '';
+        targetFolder = globalDefaultPath || path.dirname(docPath);
+    }
+
+    // If the user put a file path in defaultPath, 
+    // we check if it's a folder or a file by extension:
+    let stats: fs.Stats | undefined;
+    try {
+        stats = fs.statSync(targetFolder);
+    } catch { /* ignore */ }
+
+    let finalSavePath: string;
+    if (stats && stats.isDirectory()) {
+        // It's a folder -> use new naming
+        const baseName = path.basename(docPath, '.md');
+        const now = new Date();
+        const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const hhmm = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+        finalSavePath = path.join(targetFolder, `${baseName}-state-${yyyymmdd}-${hhmm}.json`);
+    } else {
+        // It's presumably a file path
+        finalSavePath = targetFolder;
+    }
+
+    // If savingRule = latest-only, remove older JSON relevant to this doc
+    const config = vscode.workspace.getConfiguration('drafty');
+    const savingRule = config.get<string>('savingRule') || 'keep-all';
+    if (savingRule === 'latest-only') {
+        tryRemovePreviousJson(docPath, finalSavePath);
+    }
+
+    // Write the new JSON
+    const dataToSave = stateManager.serializeSessionState(session);
+    try {
+        fs.writeFileSync(finalSavePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
+    } catch (err) {
+        vscode.window.showErrorMessage(`Failed to save JSON: ${err}`);
+        return;
+    }
+
+    const panel = WebviewManager.getInstance().getPanel(docPath);
+    if (panel) {
+        panel.webview.postMessage({
+            command: 'updateLoadedPath',
+            path: finalSavePath
+        });
+    }
+
+    setDefaultPathForDoc(docPath, path.dirname(finalSavePath));
+
+    vscode.window.showInformationMessage(`Results saved to: ${finalSavePath}`);
+}
+
+
+function tryRemovePreviousJson(docPath: string, finalSavePath: string) {
+    const folder = path.dirname(finalSavePath);
+    if (!fs.existsSync(folder)) {
+        return;
+    }
+    const baseName = path.basename(docPath, '.md');
+    const pattern = new RegExp(`^${baseName}-state-.*\\.json$`, 'i');
+
+    const allFiles = fs.readdirSync(folder);
+    for (const f of allFiles) {
+        if (pattern.test(f) && path.join(folder, f) !== finalSavePath) {
+            // remove it
+            try {
+                fs.unlinkSync(path.join(folder, f));
+            } catch (err) {
+                console.warn('Failed to remove old JSON file:', err);
+            }
+        }
     }
 }
 

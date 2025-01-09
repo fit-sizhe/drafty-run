@@ -265,6 +265,38 @@ export class WebviewManager {
         .status-error {
             border-color: var(--vscode-testing-iconFailed);
         }
+        .vscode-button {
+          cursor: pointer;
+          margin-right: 0.5em;
+          padding: 0.4em 0.8em;
+          border: 1px solid var(--vscode-button-border);
+          border-radius: 3px;
+
+          /* Matching typical VSCode button background and foreground */
+          background-color: var(--vscode-button-background);
+          color: var(--vscode-button-foreground);
+
+          /* Optional: override default font a bit smaller or bigger. */
+          font-size: 0.9rem;
+        }
+
+        .vscode-button:hover {
+          background-color: var(--vscode-button-hoverBackground);
+        }
+
+        /* Inputs and selects: similar approach */
+        input[type="text"],
+        input[type="number"],
+        select {
+          font-family: var(--vscode-editor-font-family);
+          font-size: 0.9rem;
+          text-wrap: wrap;
+          color: var(--vscode-input-foreground);
+          background-color: var(--vscode-input-background);
+          border: 1px solid var(--vscode-button-background);
+          padding: 4px 6px;
+          border-radius: 3px;
+        }
     </style>
 </head>
 <body>
@@ -278,7 +310,13 @@ export class WebviewManager {
         <button id="clearButton">Clear Results</button>
     </div>
     <div class="panel-top">
-        <button id="saveButton">Save Results</button>
+        <div style="margin-top: 10px;">
+            <button id="loadResultsButton" class="vscode-button">Load Results</button>
+            <button id="saveAsButton" class="vscode-button">Save As</button>
+            <button id="saveButton" class="vscode-button">Save</button>
+        </div>
+        <label><strong>Loaded Results:</strong></label>
+        <input type="text" id="loadedResultsPath" readonly style="width: 300px; background: none;" />
     </div>
 
     ${outputHtml}
@@ -323,17 +361,32 @@ export class WebviewManager {
         });
 
         // "Save Results" button
+        const loadResultsButton = document.getElementById('loadResultsButton');
+        loadResultsButton?.addEventListener('click', () => {
+            vscode.postMessage({ command: 'loadResults' });
+        });
+
+        const saveAsButton = document.getElementById('saveAsButton');
+        saveAsButton?.addEventListener('click', () => {
+            vscode.postMessage({ command: 'saveAs' });
+        });
+
         const saveButton = document.getElementById('saveButton');
         saveButton?.addEventListener('click', () => {
-            vscode.postMessage({
-                command: 'saveState'
-            });
+            // We'll use "save" to respect the extension config
+            vscode.postMessage({ command: 'save' });
         });
 
         // Listen for partial outputs from extension
         window.addEventListener('message', event => {
             const message = event.data;
-            if (message.command === 'partialOutput') {
+            if (message.command === 'updateLoadedPath') {
+                const loadedPathBox = document.getElementById('loadedResultsPath');
+                if (loadedPathBox) {
+                    loadedPathBox.value = message.path || '';
+                }
+            }
+            else if (message.command === 'partialOutput') {
                 const { blockId, output } = message;
                 updateBlockOutput(blockId, output);
             }
