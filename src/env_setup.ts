@@ -3,6 +3,24 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { exec } from 'child_process';
 
+
+export function truncatePath(fullPath: string, maxSegments: number = 5): string {
+    // Split on path separator:
+    // For Windows, e.g. "C:\Users\John\..." => ["C:", "Users", "John", ...].
+    // For Linux/macOS, e.g. "/usr/local/bin/python" => ["", "usr", "local", "bin", "python"].
+    const segments = fullPath.split(path.sep).filter(Boolean);
+
+    if (segments.length > maxSegments) {
+        // Number of segments to remove
+        const removeCount = segments.length - maxSegments;
+        // Replace all removed segments with 'parent-folder'
+        segments.splice(0, removeCount, 'parent-folder');
+    }
+
+    // Re-join with the platform-specific separator
+    return segments.join(path.sep);
+}
+
 export interface Environment {
     label: string;
     path: string;
@@ -53,7 +71,6 @@ export class EnvironmentManager {
 
         const systemPythons = await this.listSystemPythons();
         results.push(...systemPythons);
-        console.log(results)
 
         // If none found, fallback to "python3" or "python.exe" on Windows
         if (results.length === 0) {
@@ -95,7 +112,6 @@ export class EnvironmentManager {
             exec(cmd, (error, stdout) => {
                 if (!error) {
                     // Split lines
-                    console.log(stdout)
                     const lines = stdout.trim().split(/\r?\n/);
                     for (const line of lines) {
                         if (fs.existsSync(line)) {

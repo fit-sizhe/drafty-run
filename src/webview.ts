@@ -198,11 +198,18 @@ export class WebviewManager {
         }
         .panel-top {
             display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin-bottom: 1em;
+            flex-direction: column;
+            align-items: left;
+            margin-bottom: 0.2em;
         }
-        .panel-top label {
+        .panel-row {
+            max-width: 600px;
+            min-width: 450px;
+            display: flex;
+            margin-bottom: 0.6em;
+            
+        }
+        .panel-row label {
             margin-right: 0.3em;
         }
         select, input, button {
@@ -267,30 +274,26 @@ export class WebviewManager {
         }
         .vscode-button {
           cursor: pointer;
+          flex: 1;
           margin-right: 0.5em;
           padding: 0.4em 0.8em;
           border: 1px solid var(--vscode-button-border);
           border-radius: 3px;
-
-          /* Matching typical VSCode button background and foreground */
           background-color: var(--vscode-button-background);
           color: var(--vscode-button-foreground);
-
-          /* Optional: override default font a bit smaller or bigger. */
-          font-size: 0.9rem;
+          font-size: 0.8rem;
         }
-
         .vscode-button:hover {
           background-color: var(--vscode-button-hoverBackground);
         }
 
-        /* Inputs and selects: similar approach */
+
         input[type="text"],
         input[type="number"],
         select {
           font-family: var(--vscode-editor-font-family);
-          font-size: 0.9rem;
-          text-wrap: wrap;
+          font-size: 0.8rem;
+          flex: 1;
           color: var(--vscode-input-foreground);
           background-color: var(--vscode-input-background);
           border: 1px solid var(--vscode-button-background);
@@ -301,22 +304,24 @@ export class WebviewManager {
 </head>
 <body>
     <div class="panel-top">
-        <label for="envSelect"><strong>Python Interpreter:</strong></label>
+    <div class="panel-row">
+        <label for="envSelect"><strong>Python:</strong></label>
         <select id="envSelect">${optionsHtml}</select>
-
-        <label for="maxHeightInput"><strong>Max result height (px):</strong></label>
-        <input type="number" id="maxHeightInput" min="50" step="10" value="${maxResultHeight}" />
-        
-        <button id="clearButton">Clear Results</button>
     </div>
-    <div class="panel-top">
-        <div style="margin-top: 10px;">
-            <button id="loadResultsButton" class="vscode-button">Load Results</button>
-            <button id="saveAsButton" class="vscode-button">Save As</button>
-            <button id="saveButton" class="vscode-button">Save</button>
-        </div>
-        <label><strong>Loaded Results:</strong></label>
-        <input type="text" id="loadedResultsPath" readonly style="width: 300px; background: none;" />
+    <div class="panel-row">
+        <label for="maxHeightInput"><strong>Max result height(px):</strong></label>
+        <input type="number" id="maxHeightInput" min="50" step="50" value="${maxResultHeight}" />
+    </div>
+    <div class="panel-row">
+        <button id="loadResultsButton" class="vscode-button">Load</button>
+        <button id="saveAsButton" class="vscode-button">Save As</button>
+        <button id="saveButton" class="vscode-button">Save</button>
+        <button id="clearButton" class="vscode-button">Clear</button>
+    </div>
+    <div class="panel-row">
+        <label><strong>Loaded JSON:</strong></label>
+        <input type="text" id="loadedResultsPath" readonly style="background: none;" />
+    </div>
     </div>
 
     ${outputHtml}

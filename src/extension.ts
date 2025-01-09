@@ -4,7 +4,7 @@ import * as path from 'path';
 import markdownit from 'markdown-it'
 import { CodeBlock, CodeBlockExecution, CellOutput } from './types';
 import { PythonRunner } from './pythonRunner';
-import { EnvironmentManager } from './env_setup';
+import { EnvironmentManager, truncatePath } from './env_setup';
 import { StateManager } from './state_io';
 import { WebviewManager } from './webview';
 
@@ -252,7 +252,7 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
         if (panel) {
             panel.webview.postMessage({
                 command: 'updateLoadedPath',
-                path: existingState.filePath
+                path: truncatePath(existingState.filePath, 5)
             });
         }
 
@@ -556,7 +556,7 @@ async function handleLoadResults(docPath: string, panel: vscode.WebviewPanel) {
     // Send a message back to the webview to show the loaded file
     panel.webview.postMessage({
         command: 'updateLoadedPath',
-        path: selectedFilePath
+        path: truncatePath(selectedFilePath, 5)
     });
 
     vscode.window.showInformationMessage('Loaded results from JSON!');
@@ -594,7 +594,7 @@ async function handleSaveAs(docPath: string) {
     if (panel) {
         panel.webview.postMessage({
             command: 'updateLoadedPath',
-            path: saveFilePath
+            path: truncatePath(saveFilePath, 5)
         });
     }
     
@@ -660,7 +660,7 @@ async function handleSave(docPath: string) {
     if (panel) {
         panel.webview.postMessage({
             command: 'updateLoadedPath',
-            path: finalSavePath
+            path: truncatePath(finalSavePath, 5)
         });
     }
 

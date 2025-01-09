@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Reorg `env_setup.ts` so that `conda` can be found on Windows
+- Rearrange Panel Top GUI to make buttons less crowded
+
 ## [0.1.0-alpha] - 2025-01-08
 
 ### Added
