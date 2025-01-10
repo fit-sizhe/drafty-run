@@ -252,7 +252,7 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
         if (panel) {
             panel.webview.postMessage({
                 command: 'updateLoadedPath',
-                path: truncatePath(existingState.filePath, 5)
+                path: truncatePath(existingState.filePath)
             });
         }
 
@@ -556,7 +556,7 @@ async function handleLoadResults(docPath: string, panel: vscode.WebviewPanel) {
     // Send a message back to the webview to show the loaded file
     panel.webview.postMessage({
         command: 'updateLoadedPath',
-        path: truncatePath(selectedFilePath, 5)
+        path: truncatePath(selectedFilePath)
     });
 
     vscode.window.showInformationMessage('Loaded results from JSON!');
@@ -594,7 +594,7 @@ async function handleSaveAs(docPath: string) {
     if (panel) {
         panel.webview.postMessage({
             command: 'updateLoadedPath',
-            path: truncatePath(saveFilePath, 5)
+            path: truncatePath(saveFilePath)
         });
     }
     
@@ -660,7 +660,7 @@ async function handleSave(docPath: string) {
     if (panel) {
         panel.webview.postMessage({
             command: 'updateLoadedPath',
-            path: truncatePath(finalSavePath, 5)
+            path: truncatePath(finalSavePath)
         });
     }
 

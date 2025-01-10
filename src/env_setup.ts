@@ -2,9 +2,10 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { exec } from 'child_process';
+import * as vscode from 'vscode';
 
 
-export function truncatePath(fullPath: string, maxSegments: number = 5): string {
+export function truncatePath(fullPath: string, maxSegments: number = 3): string {
     // Split on path separator:
     // For Windows, e.g. "C:\Users\John\..." => ["C:", "Users", "John", ...].
     // For Linux/macOS, e.g. "/usr/local/bin/python" => ["", "usr", "local", "bin", "python"].
@@ -62,16 +63,16 @@ export class EnvironmentManager {
     private async gatherEnvironments(): Promise<Environment[]> {
         const results: Environment[] = [];
 
+        vscode.window.setStatusBarMessage('Looking for Python Envs', 1000);
         const condaEnvs = await this.listCondaEnvs();
         results.push(...condaEnvs);
 
         const venvs = this.listVirtualenvs();
         results.push(...venvs);
 
-
         const systemPythons = await this.listSystemPythons();
         results.push(...systemPythons);
-
+        vscode.window.setStatusBarMessage('Done with Env Search', 1000);
         // If none found, fallback to "python3" or "python.exe" on Windows
         if (results.length === 0) {
             if (process.platform === 'win32') {
@@ -255,37 +256,23 @@ export class EnvironmentManager {
     }
 
     private async findWinConda(): Promise<string | null> {
-        return new Promise((resolve) => {
-            // Try 'where conda' first
-            exec('where conda', (error, stdout) => {
-                if (!error) {
-                    // If successful, 'where conda' may return multiple lines — pick the first
-                    const lines = stdout.trim().split(/\r?\n/);
-                    for (const line of lines) {
-                        if (fs.existsSync(line)) {
-                            return resolve(line); // found a valid conda.exe
-                        }
-                    }
+        return new Promise((resolve) => { 
+            // Fallback to known default locations
+            const fallbackPaths = [
+                path.join(os.homedir(), 'anaconda3', 'Scripts', 'conda.exe'),
+                path.join(os.homedir(), 'miniconda3', 'Scripts', 'conda.exe'),
+                'C:\\ProgramData\\Anaconda3\\Scripts\\conda.exe',
+                'C:\\Program Files\\Anaconda3\\Scripts\\conda.exe',
+                'C:\\Program Files (x86)\\Anaconda3\\Scripts\\conda.exe',
+            ];
+
+            for (const fp of fallbackPaths) {
+                if (fs.existsSync(fp)) {
+                    return resolve(fp);
                 }
-                
-                // Fallback to known default locations
-                const fallbackPaths = [
-                    path.join(os.homedir(), 'anaconda3', 'Scripts', 'conda.exe'),
-                    path.join(os.homedir(), 'miniconda3', 'Scripts', 'conda.exe'),
-                    'C:\\ProgramData\\Anaconda3\\Scripts\\conda.exe',
-                    'C:\\Program Files\\Anaconda3\\Scripts\\conda.exe',
-                    'C:\\Program Files (x86)\\Anaconda3\\Scripts\\conda.exe',
-                ];
-    
-                for (const fp of fallbackPaths) {
-                    if (fs.existsSync(fp)) {
-                        return resolve(fp);
-                    }
-                }
-    
-                // If not found, return null
-                return resolve(null);
-            });
+            }
+            // If not found, return null
+            return resolve(null);
         });
     }    
 
