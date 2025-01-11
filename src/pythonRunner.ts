@@ -1,6 +1,5 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
-import * as fs from 'fs';
 import { CellOutput } from './types';
 
 //
@@ -118,7 +117,6 @@ plt.pause = _realtime_pause
 
 export class PythonRunner {
     
-    // We'll store a "globalState" to allow basic retention of variables across runs.
     private globalState: { [key: string]: any } = {};
     private processes: Map<string, ChildProcessWithoutNullStreams> = new Map();
 
@@ -179,18 +177,17 @@ export class PythonRunner {
             throw new Error(`No process for docPath: ${docPath}`);
         }
     
-        // remove any prior listener:
+        // Remove any prior stdout listener
         child.stdout.removeAllListeners('data');
     
         let finalOutputs: CellOutput[] = [];
         const promise = new Promise<{ outputs: CellOutput[] }>((resolve, reject) => {
-            
+    
             const onData = (chunk: Buffer) => {
                 const message = chunk.toString('utf8');
                 const lines = message.split('\n').filter(l => l.trim());
-    
                 for (const line of lines) {
-                    // Check partial vs OUTPUTS vs STATE
+                    // Handle partial vs OUTPUTS vs STATE
                     if (line.startsWith('PARTIAL_OUTPUTS:')) {
                         console.debug('[Stream Partial]:', line);
                         const jsonStr = line.slice('PARTIAL_OUTPUTS:'.length).trim();
@@ -212,12 +209,14 @@ export class PythonRunner {
                             console.error('Failed to parse OUTPUTS JSON:', err);
                         }
                     } else if (line.startsWith('STATE:')) {
-                        // resolve the promise
+                        // Done - resolve
                         console.debug('[Stream STATE]:', line);
                         child.stdout.off('data', onData);
-                        resolve({ outputs: finalOutputs });
+                        // TODO: make this arm more useful
+                        // not printing anything for now
+                        resolve({ outputs: [] });
                     } else {
-                        // normal text
+                        // Normal text
                         onDataCallback?.({
                             type: 'text',
                             timestamp: Date.now(),
@@ -230,7 +229,7 @@ export class PythonRunner {
     
             child.stdout.on('data', onData);
     
-            // also handle stderr
+            // handle stderr
             child.stderr.on('data', (chunk: Buffer) => {
                 const errorLine = chunk.toString('utf8');
                 onDataCallback?.({
@@ -239,36 +238,38 @@ export class PythonRunner {
                     content: errorLine,
                     stream: 'stderr'
                 });
-                // not necessarily reject, but you could if you want
             });
     
-            // handle process close
             child.on('close', (code) => {
                 if (code !== 0) {
                     reject(new Error(`Python process exited with code ${code}`));
                 } else {
-                    // TODO: fallback resolve here if you want 
+                    // Optionally resolve if needed
                 }
             });
         });
     
-        const indentedCode = code.split('\n').map(line => '    ' + line).join('\n');
+        // Base64-encode the user code
+        const codeBase64 = Buffer.from(code, 'utf8').toString('base64');
     
-        const wrappedCode = `exec("""try:
-${indentedCode}
+        // wrap everything in a single exec("""...""") block
+        const wrappedCode = `
+exec("""import base64
+decoded = base64.b64decode('${codeBase64}').decode('utf-8')
+try:
+    exec(decoded, globals(), globals())
     cleanup_plots()
 except Exception as e:
     output_collector.add_error(e)
 
-print("OUTPUTS:", json.dumps(output_collector._outputs))
-print("STATE:", json.dumps({}))
+print('OUTPUTS:', json.dumps(output_collector._outputs))
+print('STATE:', json.dumps({}))
 """)`;
     
         child.stdin.write(wrappedCode + '\n');
         return promise;
     }
     
-
     public disposeRunner(docPath: string): void {
         const child = this.processes.get(docPath);
         if (child) {

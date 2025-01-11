@@ -48,11 +48,11 @@ import time
 
 # This should show output gradually
 for i in range(5):
-    print(f"Processing step {i+1}...")
+    print(f'Processing step {i+1}...')
     time.sleep(1)  # Simulate some work being done
-    print(f"Step {i+1} complete!")
+    print(f'Step {i+1} complete!')
 
-print("\nAll processing complete!")
+print('\nAll processing complete!')
 ```
 
 ## Rich Output Test
