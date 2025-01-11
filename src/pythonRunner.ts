@@ -181,15 +181,24 @@ export class PythonRunner {
         child.stdout.removeAllListeners('data');
     
         let finalOutputs: CellOutput[] = [];
+        let dataBuffer = ''; // accumulate chunks here until we have complete lines
+    
         const promise = new Promise<{ outputs: CellOutput[] }>((resolve, reject) => {
     
+            // Handle chunks from stdout
             const onData = (chunk: Buffer) => {
-                const message = chunk.toString('utf8');
-                const lines = message.split('\n').filter(l => l.trim());
-                for (const line of lines) {
-                    // Handle partial vs OUTPUTS vs STATE
+                dataBuffer += chunk.toString('utf8');
+                const lines = dataBuffer.split('\n');
+                // last element may be incomplete, put it back into dataBuffer
+                dataBuffer = lines.pop() || '';
+    
+                // each item in `lines` is a complete line
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
+                    if (!line) continue;
+    
                     if (line.startsWith('PARTIAL_OUTPUTS:')) {
-                        console.debug('[Stream Partial]:', line);
+                        // realtime partial output
                         const jsonStr = line.slice('PARTIAL_OUTPUTS:'.length).trim();
                         try {
                             const partialObj = JSON.parse(jsonStr);
@@ -201,7 +210,6 @@ export class PythonRunner {
                             console.error('Failed to parse PARTIAL_OUTPUTS JSON:', err);
                         }
                     } else if (line.startsWith('OUTPUTS:')) {
-                        console.debug('[Stream OUTPUTS]:', line);
                         const jsonStr = line.slice('OUTPUTS:'.length).trim();
                         try {
                             finalOutputs = JSON.parse(jsonStr);
@@ -244,7 +252,7 @@ export class PythonRunner {
                 if (code !== 0) {
                     reject(new Error(`Python process exited with code ${code}`));
                 } else {
-                    // Optionally resolve if needed
+                    // TODO: Optionally resolve if needed
                 }
             });
         });

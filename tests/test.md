@@ -1,10 +1,19 @@
 # Python Code Runner Test
 
 ## Basic Output Test
+
 ```python
 print("Hello, World!")
 x = 42
 print(f"The value of x is {x}")
+```
+
+## Basic Path Test
+
+```python
+from PIL import Image
+im = Image.open("../assets/icon.png")
+print(im.format, im.size, im.mode)
 ```
 
 ## Matplotlib Visualization Test
