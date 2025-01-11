@@ -302,8 +302,9 @@ print('STATE:', json.dumps({}))
     }
 
     public clearState(): void {
+        // TODO: delete globalState altogether
         this.globalState = {};
-        this.processes.clear();
+        // this.processes.clear();
     }
 
     public getGlobalState(): { [key: string]: any } {
