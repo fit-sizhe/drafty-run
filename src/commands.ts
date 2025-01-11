@@ -8,9 +8,6 @@ import { EnvironmentManager, truncatePath } from './env_setup';
 import { RunnerRegistry } from './runnerRegistry';
 import { extractCodeBlocks, parseMarkdownContent, extractCodeFromRange, findLanguageForRange } from './codeBlockParser';
 
-// Keep track of running processes to allow termination
-const runningProcesses: Map<string, any> = new Map();
-
 // docPath -> default folder path for JSON
 const docDefaultPaths = new Map<string, string>();
 
@@ -335,17 +332,14 @@ async function runSingleCodeBlock(
         });
     };
 
-    const promise = runner.executeCode(
-        docPath,
-        code,
-        envManager.getSelectedPath(),
-        blockId,
-        onPartialOutput
-    );
-    runningProcesses.set(blockId, promise);
-
     try {
-        await promise;
+        await runner.executeCode(
+            docPath,
+            code,
+            envManager.getSelectedPath(),
+            blockId,
+            onPartialOutput
+        );
         blockExecution.metadata.status = 'success';
     } catch (error) {
         const errStr = error instanceof Error ? error.message : String(error);
@@ -358,8 +352,6 @@ async function runSingleCodeBlock(
             }
         ];
         blockExecution.metadata.status = 'error';
-    } finally {
-        runningProcesses.delete(blockId);
     }
 
     blockExecution.metadata.executionTime = Date.now() - blockExecution.metadata.timestamp;
@@ -392,32 +384,13 @@ export async function terminateBlockHandler(context: vscode.ExtensionContext, ra
         return;
     }
 
-    const blockId = `block-${range.start.line}`;
-    if (!runningProcesses.has(blockId)) {
-        vscode.window.showInformationMessage('No running process found for this block.');
-        return;
-    }
-
-    try {
-        const processToKill = runningProcesses.get(blockId);
-        processToKill?.kill?.();
-        runningProcesses.delete(blockId);
-
-        const blockExecution = currentState.codeBlocks.get(blockId);
-        if (blockExecution) {
-            blockExecution.metadata.status = 'error';
-            blockExecution.outputs.push({
-                type: 'text',
-                timestamp: Date.now(),
-                content: 'Execution terminated by user.',
-                stream: 'stderr'
-            });
-        }
-
-        updatePanel(docPath);
-        vscode.window.showInformationMessage(`Terminated execution of block at line ${range.start.line}.`);
-    } catch (err) {
-        vscode.window.showErrorMessage(`Failed to terminate block: ${String(err)}`);
+    // Send SIGINT to the Python process
+    const pythonAdapter = RunnerRegistry.getInstance().getRunner('python');
+    if (pythonAdapter && 'terminateExecution' in pythonAdapter) {
+        (pythonAdapter as any).terminateExecution(docPath);
+        vscode.window.showInformationMessage(`Sent interrupt signal to Python process for ${path.basename(docPath)}`);
+    } else {
+        vscode.window.showErrorMessage('Python runner does not support interruption');
     }
 }
 

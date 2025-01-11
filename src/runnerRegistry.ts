@@ -12,6 +12,7 @@ export interface ILanguageRunner {
     ): Promise<{ outputs: CellOutput[] }>;
     clearState(docPath: string): void;
     disposeRunner(docPath: string): void;
+    terminateExecution?(docPath: string): void; // Optional for backward compatibility
 }
 
 // Adapter to make PythonRunner match ILanguageRunner interface
@@ -42,10 +43,17 @@ export class PythonRunnerAdapter implements ILanguageRunner {
         onPartialOutput?: (output: CellOutput) => void
     ) {
         const runner = this.getRunner(docPath);
-        return runner.executeCode(docPath, code, onPartialOutput);
+        // Use queue-based execution
+        return runner.queueCodeExecution(docPath, code, onPartialOutput);
     }
 
-    // TODO: this function does nothing
+    terminateExecution(docPath: string): void {
+        const runner = this.runners.get(docPath);
+        if (runner) {
+            runner.terminateExecution(docPath);
+        }
+    }
+
     clearState(docPath: string): void {
         const runner = this.runners.get(docPath);
         if (runner) {
@@ -57,11 +65,17 @@ export class PythonRunnerAdapter implements ILanguageRunner {
     }
 
     disposeRunner(docPath: string): void {
-        // Remove the runner from the map entirely
+        const runner = this.runners.get(docPath);
+        if (runner) {
+            runner.disposeRunner(docPath);
+        }
         this.runners.delete(docPath);
     }
 
     disposeAll(): void {
+        for (const [docPath, runner] of this.runners.entries()) {
+            runner.disposeRunner(docPath);
+        }
         this.runners.clear();
     }    
 }
