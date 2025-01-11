@@ -32,7 +32,7 @@ plt.legend()
 print(f"x is still {x}")
 
 # Create a new variable
-y = [1, 2, 3]
+y = np.array([1, 2, 3])
 print(f"y is {y}")
 ```
 

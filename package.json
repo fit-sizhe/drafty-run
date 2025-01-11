@@ -76,7 +76,6 @@
   },
   "dependencies": {
     "markdown-it": "^14.1.0",
-    "python-shell": "^5.0.0",
     "uuid": "^9.0.1"
   }
 }

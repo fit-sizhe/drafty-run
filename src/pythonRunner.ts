@@ -1,4 +1,4 @@
-import { PythonShell } from 'python-shell';
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { CellOutput } from './types';
@@ -15,8 +15,9 @@ import base64
 import types
 import copy
 from contextlib import redirect_stdout, redirect_stderr
+sys.ps1 = ''
+sys.ps2 = ''
 
-# Configure matplotlib for a non-interactive backend
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -41,10 +42,6 @@ class OutputCollector:
         self._flush_partial(output)
 
     def _flush_partial(self, output):
-        """
-        Print only the newly added output as a JSON string,
-        prefixed by PARTIAL_OUTPUTS: so the Node side can detect it.
-        """
         print("PARTIAL_OUTPUTS:" + json.dumps(output))
 
     def add_text(self, text: str, stream: str = 'stdout'):
@@ -52,10 +49,6 @@ class OutputCollector:
             self._add_output('text', content=text.strip(), stream=stream)
     
     def add_image(self, format: str = 'png', **kwargs):
-        """
-        Capture all open figures, encode them, and send them as partial output.
-        If you want to close them right after capturing, uncomment plt.close('all').
-        """
         buf = io.BytesIO()
         
         if format == 'png':
@@ -70,7 +63,7 @@ class OutputCollector:
                          format=format,
                          data=image_data,
                          metadata=kwargs)
-        # plt.close('all')  # Optionally close figures if desired.
+        # plt.close('all')
     
     def add_error(self, error: Exception):
         tb = traceback.extract_tb(error.__traceback__)
@@ -90,23 +83,15 @@ output_collector = OutputCollector()
 
 def custom_display_hook(obj):
     if obj is not None:
-        # Show the object's repr as text
         output_collector.add_text(repr(obj))
 
 sys.__displayhook__ = custom_display_hook
 
 def cleanup_plots():
-    """
-    If there are any active figures at the end, convert them to images.
-    """
     if plt.get_fignums():
         output_collector.add_image()
         plt.close('all')
 
-
-############################################################
-#   REAL-TIME MATPLOTLIB PATCHES
-############################################################
 
 _original_pause = plt.pause
 
@@ -129,185 +114,187 @@ def _realtime_pause(interval):
 # Monkey-patch show and pause for real-time streaming
 plt.show = _realtime_show
 plt.pause = _realtime_pause
-
-
-
 `;
 
 export class PythonRunner {
     
     // We'll store a "globalState" to allow basic retention of variables across runs.
     private globalState: { [key: string]: any } = {};
+    private processes: Map<string, ChildProcessWithoutNullStreams> = new Map();
 
     constructor() {}
 
-
-    /**
-     * Executes `code` in a temporary Python script using the specified `pythonPath`.
-     * Allows partial streaming by calling onDataCallback with text lines (or images) as they arrive.
-     * Returns both the outputs and the pyshell instance for process management.
-     */
-    public executeCode(
-        code: string,
+    // start a persistent python process per doc
+    // only kill the process on doc close or session clear
+    public startProcessForDoc(
+        docPath: string,
         pythonPath: string,
-        blockId: string,
         onDataCallback?: (partialOutput: CellOutput) => void
-    ): { 
-        process: PythonShell,
-        promise: Promise<{ outputs: CellOutput[] }>
-    } {
-        const options = {
-            mode: 'text' as const,
-            pythonPath,
-            pythonOptions: ['-u'] // -u = unbuffered (helps streaming)
-        };
+    ): void {
 
-        // Inject "globalState" into the user code
-        const stateInjection = Object.entries(this.globalState)
-            .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
-            .join('\n');
+        if (this.processes.has(docPath)) {
+            return;
+        }
 
-        // Indent user code
-        const indentedCode = code
-            .split('\n')
-            .map((line) => '    ' + line)
-            .join('\n');
+        const child = spawn(pythonPath, ['-u', '-i'], {
+            cwd: path.dirname(docPath),
+        });
 
-        // Final wrapped code
-        const wrappedCode = `${PYTHON_SETUP_CODE}
-${stateInjection}
 
-try:
+        child.stdout.on('data', (data: Buffer) => {
+            onDataCallback?.({
+                type: 'text',
+                timestamp: Date.now(),
+                content: data.toString(),
+                stream: 'stdout'
+            });
+        });
+
+        child.stderr.on('data', (data: Buffer) => {
+            onDataCallback?.({
+                type: 'text',
+                timestamp: Date.now(),
+                content: data.toString(),
+                stream: 'stderr'
+            });
+        });
+
+        child.on('close', (code) => {
+            console.log(`Python process closed with code ${code}`);
+            this.processes.delete(docPath);
+        });
+
+        this.processes.set(docPath, child);
+        const wrappedSetup = `exec("""${PYTHON_SETUP_CODE}""")`;
+        child.stdin.write(wrappedSetup + "\n");
+    }
+
+    public executeCode(
+        docPath: string,
+        code: string,
+        onDataCallback?: (partialOutput: CellOutput) => void
+    ): Promise<{ outputs: CellOutput[] }> {
+        const child = this.processes.get(docPath);
+        if (!child) {
+            throw new Error(`No process for docPath: ${docPath}`);
+        }
+    
+        // remove any prior listener:
+        child.stdout.removeAllListeners('data');
+    
+        let finalOutputs: CellOutput[] = [];
+        const promise = new Promise<{ outputs: CellOutput[] }>((resolve, reject) => {
+            
+            const onData = (chunk: Buffer) => {
+                const message = chunk.toString('utf8');
+                const lines = message.split('\n').filter(l => l.trim());
+    
+                for (const line of lines) {
+                    // Check partial vs OUTPUTS vs STATE
+                    if (line.startsWith('PARTIAL_OUTPUTS:')) {
+                        console.debug('[Stream Partial]:', line);
+                        const jsonStr = line.slice('PARTIAL_OUTPUTS:'.length).trim();
+                        try {
+                            const partialObj = JSON.parse(jsonStr);
+                            onDataCallback?.({
+                                ...partialObj,
+                                timestamp: Date.now()
+                            });
+                        } catch (err) {
+                            console.error('Failed to parse PARTIAL_OUTPUTS JSON:', err);
+                        }
+                    } else if (line.startsWith('OUTPUTS:')) {
+                        console.debug('[Stream OUTPUTS]:', line);
+                        const jsonStr = line.slice('OUTPUTS:'.length).trim();
+                        try {
+                            finalOutputs = JSON.parse(jsonStr);
+                        } catch (err) {
+                            console.error('Failed to parse OUTPUTS JSON:', err);
+                        }
+                    } else if (line.startsWith('STATE:')) {
+                        // resolve the promise
+                        console.debug('[Stream STATE]:', line);
+                        child.stdout.off('data', onData);
+                        resolve({ outputs: finalOutputs });
+                    } else {
+                        // normal text
+                        onDataCallback?.({
+                            type: 'text',
+                            timestamp: Date.now(),
+                            content: line,
+                            stream: 'stdout'
+                        });
+                    }
+                }
+            };
+    
+            child.stdout.on('data', onData);
+    
+            // also handle stderr
+            child.stderr.on('data', (chunk: Buffer) => {
+                const errorLine = chunk.toString('utf8');
+                onDataCallback?.({
+                    type: 'text',
+                    timestamp: Date.now(),
+                    content: errorLine,
+                    stream: 'stderr'
+                });
+                // not necessarily reject, but you could if you want
+            });
+    
+            // handle process close
+            child.on('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(`Python process exited with code ${code}`));
+                } else {
+                    // TODO: fallback resolve here if you want 
+                }
+            });
+        });
+    
+        const indentedCode = code.split('\n').map(line => '    ' + line).join('\n');
+    
+        const wrappedCode = `exec("""try:
 ${indentedCode}
     cleanup_plots()
 except Exception as e:
     output_collector.add_error(e)
 
-# Attempt to gather updated locals into JSON
-state_dict = {}
-locals_copy = dict(locals().items())
+print("OUTPUTS:", json.dumps(output_collector._outputs))
+print("STATE:", json.dumps({}))
+""")`;
+    
+        child.stdin.write(wrappedCode + '\n');
+        return promise;
+    }
+    
 
-for key, value in locals_copy.items():
-    if not key.startswith('_') and not callable(value) and not isinstance(value, (type, types.ModuleType)):
-        try:
-            import copy
-            import json
-            value_copy = copy.deepcopy(value)
-            json.dumps(value_copy)
-            state_dict[key] = value_copy
-        except:
-            pass
+    public disposeRunner(docPath: string): void {
+        const child = this.processes.get(docPath);
+        if (child) {
+            try {
+                child.kill();
+            } catch (err) {
+                console.error('Error killing Python process:', err);
+            }
+            this.processes.delete(docPath);
+        }
+    }
 
-print("STATE:", json.dumps(state_dict))
-print("OUTPUTS:", output_collector.get_outputs())
-`;
-
-        // Create a temporary .py script
-        const tmpDir = process.env.TMPDIR || process.env.TMP || '/tmp';
-        const scriptPath = path.join(tmpDir, `mdrun_temp_${Date.now()}.py`);
-        fs.writeFileSync(scriptPath, wrappedCode);
-
-        // Launch the Python process
-        const pyshell = new PythonShell(scriptPath, options);
-
-        // Build a promise that will resolve with the final outputs
-        const promise = new Promise<{ outputs: CellOutput[] }>((resolve) => {
-            let outputs: CellOutput[] = [];
-            let newState: { [key: string]: any } = {};
-
-            pyshell.on('stderr', (stderrLine: string) => {
-                console.debug('[Stream stderr]:', stderrLine);
-                if (onDataCallback) {
-                    onDataCallback({
-                        type: 'text',
-                        timestamp: Date.now(),
-                        content: stderrLine.trimEnd(),
-                        stream: 'stderr'
-                    });
-                }
-            });
-
-            // Each line from stdout is passed to .on('message', ...)
-            pyshell.on('message', (message: string) => {
-                if (!message.trim()) return;
-
-                if (message.startsWith('STATE:')) {
-                    const jsonStr = message.slice(6).trim();
-                    try {
-                        const parsed = JSON.parse(jsonStr);
-                        newState = { ...this.globalState, ...parsed };
-                    } catch (e) {
-                        console.error('Failed to parse STATE JSON:', e);
-                    }
-                } else if (message.startsWith('OUTPUTS:')) {
-                    const jsonStr = message.slice(8).trim();
-                    try {
-                        outputs = JSON.parse(jsonStr);
-                    } catch (e) {
-                        console.error('Failed to parse OUTPUTS JSON:', e);
-                    }
-                } else if (message.startsWith('PARTIAL_OUTPUTS:')) {
-                    // Real-time partial output from OutputCollector
-                    console.debug('[Stream Partial]:', message);
-                    const jsonStr = message.slice('PARTIAL_OUTPUTS:'.length).trim();
-                    try {
-                        const partialObj = JSON.parse(jsonStr);
-                        if (onDataCallback) {
-                            onDataCallback({
-                                ...partialObj,
-                                timestamp: Date.now()
-                            });
-                        }
-                    } catch (err) {
-                        console.error('Failed to parse PARTIAL_OUTPUTS JSON:', err);
-                    }
-                } else {
-                    // Normal line from stdout
-                    console.debug('[Stream stdout]:', message);
-                    if (onDataCallback) {
-                        onDataCallback({
-                            type: 'text',
-                            timestamp: Date.now(),
-                            content: message,
-                            stream: 'stdout'
-                        });
-                    }
-                }
-            });
-
-            pyshell.on('error', (err) => {
-                console.error('PythonShell error:', err);
-                resolve({
-                    outputs: [{
-                        type: 'error',
-                        timestamp: Date.now(),
-                        error: err.message,
-                        traceback: []
-                    }]
-                });
-            });
-
-            pyshell.on('close', () => {
-                // Remove temp file
-                try {
-                    fs.unlinkSync(scriptPath);
-                } catch (unlinkErr) {
-                    console.error('Failed to delete temp script:', unlinkErr);
-                }
-                // Update global state
-                this.globalState = newState;
-                // Finally, resolve with aggregated outputs
-                resolve({ outputs });
-            });
-        });
-
-        // Return both the pyshell (for immediate termination) and
-        // a promise that yields the final outputs when done.
-        return { process: pyshell, promise };
+    public disposeAll(): void {
+        for (const [docPath, shell] of this.processes.entries()) {
+            try {
+                shell.kill();
+            } catch (err) {
+                console.error('Error killing Python process:', err);
+            }
+        }
+        this.processes.clear();
     }
 
     public clearState(): void {
         this.globalState = {};
+        this.processes.clear();
     }
 
     public getGlobalState(): { [key: string]: any } {

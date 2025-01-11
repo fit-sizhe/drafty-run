@@ -29,10 +29,7 @@ export interface ILanguageRunner {
         envPath: string,
         blockId: string,
         onPartialOutput?: (output: CellOutput) => void
-    ): { 
-        process: any;
-        promise: Promise<{ outputs: CellOutput[] }>;
-    };
+    ): Promise<{ outputs: CellOutput[] }>;
     clearState(docPath: string): void;
     disposeRunner(docPath: string): void;
 }
@@ -48,6 +45,15 @@ class PythonRunnerAdapter implements ILanguageRunner {
         return this.runners.get(docPath)!;
     }
 
+    startProcessForDoc(
+        docPath: string, 
+        envPath: string, 
+        onDataCallback?: (output: CellOutput) => void
+    ) {
+        const runner = this.getRunner(docPath);
+        runner.startProcessForDoc(docPath, envPath, onDataCallback);
+    }
+
     executeCode(
         docPath: string, 
         code: string, 
@@ -56,13 +62,14 @@ class PythonRunnerAdapter implements ILanguageRunner {
         onPartialOutput?: (output: CellOutput) => void
     ) {
         const runner = this.getRunner(docPath);
-        return runner.executeCode(code, envPath, blockId, onPartialOutput);
+        return runner.executeCode(docPath, code, onPartialOutput);
     }
 
     clearState(docPath: string): void {
         const runner = this.runners.get(docPath);
         if (runner) {
             runner.clearState();
+            runner.disposeRunner(docPath);
             this.runners.delete(docPath);
         }
     }
@@ -235,6 +242,16 @@ async function startSessionHandler(context: vscode.ExtensionContext) {
         panelDisposedCallback, 
         title
     );
+
+    // Tell pythonAdapter to start the process for this doc
+    const pythonPath = envManager.getSelectedPath();
+    const pythonAdapter = languageRunners.get('python');
+    if (pythonAdapter && 'startProcessForDoc' in pythonAdapter) {
+        (pythonAdapter as PythonRunnerAdapter).startProcessForDoc(
+            mdFullPath, 
+            pythonPath
+        );
+    }
 
     // Attempt to load previous state
     const existingState = stateManager.tryLoadPreviousState(mdFullPath);
@@ -435,7 +452,7 @@ async function runSingleCodeBlock(
         });
     };
 
-    const { process, promise } = runner.executeCode(
+    const promise  = runner.executeCode(
         docPath,
         code,
         envManager.getSelectedPath(),

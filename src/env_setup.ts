@@ -63,7 +63,7 @@ export class EnvironmentManager {
     private async gatherEnvironments(): Promise<Environment[]> {
         const results: Environment[] = [];
 
-        vscode.window.setStatusBarMessage('Looking for Python Envs', 1000);
+        vscode.window.setStatusBarMessage('Looking for Python Envs', 2000);
         const condaEnvs = await this.listCondaEnvs();
         results.push(...condaEnvs);
 
@@ -72,7 +72,7 @@ export class EnvironmentManager {
 
         const systemPythons = await this.listSystemPythons();
         results.push(...systemPythons);
-        vscode.window.setStatusBarMessage('Done with Env Search', 1000);
+        vscode.window.setStatusBarMessage('Done with Env Search', 3000);
         // If none found, fallback to "python3" or "python.exe" on Windows
         if (results.length === 0) {
             if (process.platform === 'win32') {
