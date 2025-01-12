@@ -1,4 +1,10 @@
-.vscode/**
+.vscode
+node_modules
+out/
+src/
+tsconfig.json
+webpack.config.js
+esbuild.js
 .vscode-test/**
 src/**
 tests/*.json
