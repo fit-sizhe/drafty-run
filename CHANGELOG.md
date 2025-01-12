@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- [ ] code-result block binding
+- [ ] env info cache
+
+## [0.1.1] - 2025-01-11
+
 - Reorg `env_setup.ts` so that `conda` can be found on Windows
 - Rearrange Panel Top GUI to make buttons less crowded
+- Use child_process to maintain single Python process for each MD doc
+- Terminate cell execution by writing `raise KeyboardInterrupt` to stdin
 
 ## [0.1.0-alpha] - 2025-01-08
 

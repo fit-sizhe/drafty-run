@@ -213,8 +213,8 @@ export class PythonRunner {
             console.log(`No child process to terminate for docPath=${docPath}`);
             return;
         }
-        console.log(`Sending SIGINT to Python process for docPath=${docPath}`);
-        child.kill('SIGINT');
+        console.log(`Sending 'KeyboardInterrupt' to Python process for docPath=${docPath}`);
+        child.stdin.write("\nraise KeyboardInterrupt\n");
     }
 
     private async processNext(docPath: string) {
