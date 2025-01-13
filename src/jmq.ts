@@ -53,6 +53,22 @@ interface IMessageListener {
 }
 
 /**
+ * Interface for ZMQ socket based on zeromq.js v6.3.0
+ */
+interface IZmqSocket {
+    readonly readable: boolean;
+    readonly writable: boolean;
+    bind(address: string): Promise<void>;
+    unbind(address: string): Promise<void>;
+    connect(address: string): Promise<void>;
+    disconnect(address: string): Promise<void>;
+    close(): Promise<void>;
+    send(message: Array<Buffer | string>): Promise<void>;
+    receive(): Promise<Buffer[]>;
+    [Symbol.asyncIterator](): AsyncIterator<Buffer[]>;
+}
+
+/**
  * Represents a Jupyter message that follows the Jupyter Messaging Protocol.
  * This class provides functionality for creating, parsing, and replying to Jupyter messages.
  */
@@ -226,16 +242,9 @@ export class Message {
 }
 
 /**
- * Interface for ZMQ socket methods we need to implement
+ * Supported socket types
  */
-interface IZmqSocket {
-    bind(address: string): Promise<void>;
-    connect(address: string): void;
-    close(): void;
-    send(msg: Array<Buffer | string>): Promise<void>;
-    receive(): Promise<Buffer[]>;
-    [Symbol.asyncIterator](): AsyncIterator<Buffer[]>;
-}
+type SocketType = 'ROUTER' | 'DEALER' | 'PUB' | 'SUB' | 'PAIR';
 
 /**
  * Extended ZMQ socket that parses the Jupyter Messaging Protocol.
@@ -255,68 +264,28 @@ export class Socket {
      * @param scheme Optional hashing scheme (default: 'sha256')
      * @param key Optional hashing key (default: '')
      */
-    constructor(socketType: number | string, scheme = 'sha256', key = '') {
-        // Map string socket types to zmq socket type constants
-        let type: number;
-        if (typeof socketType === 'string') {
-            const socketMap: Record<string, number> = {
-                router: 6,  // ZMQ_ROUTER
-                dealer: 5,  // ZMQ_DEALER
-                pub: 1,     // ZMQ_PUB
-                sub: 2,     // ZMQ_SUB
-                pair: 0     // ZMQ_PAIR
-            };
-            const mappedType = socketMap[socketType.toLowerCase()];
-            if (typeof mappedType !== 'number') {
-                throw new Error('Invalid socket type: ' + socketType);
-            }
-            type = mappedType;
-        } else {
-            type = socketType;
-        }
+    constructor(socketType: SocketType, scheme = 'sha256', key = '') {
         // Create socket using the appropriate ZMQ socket class
-        if (typeof socketType === 'string') {
-            switch (socketType.toLowerCase()) {
-                case 'router':
-                    this.socket = new zmq.Router() as IZmqSocket;
-                    break;
-                case 'dealer':
-                    this.socket = new zmq.Dealer() as IZmqSocket;
-                    break;
-                case 'pub':
-                    this.socket = new zmq.Publisher() as unknown as IZmqSocket;
-                    break;
-                case 'sub':
-                    this.socket = new zmq.Subscriber() as unknown as IZmqSocket;
-                    break;
-                case 'pair':
-                    this.socket = new zmq.Pair() as IZmqSocket;
-                    break;
-                default:
-                    throw new Error('Invalid socket type: ' + socketType);
-            }
-        } else {
-            // For numeric types, map to the appropriate socket class
-            switch (socketType) {
-                case 6: // ZMQ_ROUTER
-                    this.socket = new zmq.Router() as unknown as IZmqSocket;
-                    break;
-                case 5: // ZMQ_DEALER
-                    this.socket = new zmq.Dealer() as unknown as IZmqSocket;
-                    break;
-                case 1: // ZMQ_PUB
-                    this.socket = new zmq.Publisher() as unknown as IZmqSocket;
-                    break;
-                case 2: // ZMQ_SUB
-                    this.socket = new zmq.Subscriber() as unknown as IZmqSocket;
-                    break;
-                case 0: // ZMQ_PAIR
-                    this.socket = new zmq.Pair() as unknown as IZmqSocket;
-                    break;
-                default:
-                    throw new Error('Invalid socket type: ' + socketType);
-            }
+        switch (socketType.toUpperCase() as SocketType) {
+            case 'ROUTER':
+                this.socket = new zmq.Router() as unknown as IZmqSocket;
+                break;
+            case 'DEALER':
+                this.socket = new zmq.Dealer() as unknown as IZmqSocket;
+                break;
+            case 'PUB':
+                this.socket = new zmq.Publisher() as unknown as IZmqSocket;
+                break;
+            case 'SUB':
+                this.socket = new zmq.Subscriber() as unknown as IZmqSocket;
+                break;
+            case 'PAIR':
+                this.socket = new zmq.Pair() as unknown as IZmqSocket;
+                break;
+            default:
+                throw new Error('Invalid socket type: ' + socketType);
         }
+
         this._jmp = {
             scheme,
             key,
@@ -334,17 +303,16 @@ export class Socket {
     /**
      * Connect socket to an address
      */
-    connect(address: string): void {
-        this.socket.connect(address);
+    async connect(address: string): Promise<void> {
+        await this.socket.connect(address);
     }
 
     /**
      * Close the socket
      */
-    close(): void {
-        this.socket.close();
+    async close(): Promise<void> {
+        await this.socket.close();
     }
-
 
     /**
      * Send a message over the socket
