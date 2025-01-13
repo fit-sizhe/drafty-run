@@ -56,9 +56,9 @@
     ]
   },
   "scripts": {
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "tsc -p ./",
     "lint": "eslint src",
-    "test": "vscode-test",
+    "test": "mocha",
     "compile": "npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
     "watch": "tsc -watch -p ./",
@@ -84,6 +84,7 @@
   },
   "dependencies": {
     "markdown-it": "^14.1.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "zeromq": "^6.3.0"
   }
 }
