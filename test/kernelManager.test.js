@@ -77,11 +77,10 @@ print("Hello from Python " + sys.version.split()[0])
   it('should interrupt a long-running command and still allow further execution', async function() {
     this.timeout(20000); // Increase timeout to 20s
 
-    // 1) Start something that never ends (or sleeps for a while)
-    // We'll do "while True: pass" to force a busy loop
+    // 1) sleeps for a while
     const code = `
 import time
-time.sleep(5)
+time.sleep(10)
 `;
     console.log('Starting infinite loop execution...');
     const execPromise = km.queueCodeExecution(DOC_PATH, code);
