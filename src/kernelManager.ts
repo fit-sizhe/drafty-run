@@ -139,12 +139,9 @@ export class KernelManager {
               ]);
       
               // Keep track of whether the kernel closed unexpectedly
-              let kernelExitedEarly = false;
-      
               const exitPromise = new Promise<void>((_, reject) => {
                 child.once('exit', (code, signal) => {
                   if (code !== 0) {
-                    kernelExitedEarly = true;
                     reject(
                       new Error(
                         `Kernel exited before readiness (doc=${docPath}), code=${code}, signal=${signal}`
@@ -682,46 +679,4 @@ export class KernelManager {
         })();
       }
       
-    
-
-    /**
-     * Wait until a file exists (basic polling).
-     * In production, you'd probably watch for FS events or have better logic.
-     */
-    private async waitForFile(filePath: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const maxWaitMs = 10_000; // 10s
-            const interval = 100;
-            let waited = 0;
-
-            const check = () => {
-                if (fs.existsSync(filePath)) {
-                    return resolve();
-                }
-                waited += interval;
-                if (waited >= maxWaitMs) {
-                    return reject(
-                        new Error(`Timeout waiting for connection file: ${filePath}`)
-                    );
-                }
-                setTimeout(check, interval);
-            };
-            check();
-        });
-    }
-
-    /**
-     * Parse signature_scheme (like "hmac-sha256") and key => (scheme, keyStr)
-     */
-    private parseSignatureScheme(
-        signatureScheme: string,
-        key: string
-    ): { scheme: string; key: string } {
-        // signatureScheme is typically "hmac-sha256"
-        // so scheme = "sha256".
-        // The key is base64 or ascii (?). Usually it's ascii hex, but jmq just needs the raw string.
-        const parts = signatureScheme.split('hmac-');
-        const scheme = parts.length > 1 ? parts[1] : 'sha256';
-        return { scheme, key };
-    }
 }
