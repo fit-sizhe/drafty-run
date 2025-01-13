@@ -349,42 +349,61 @@ export class KernelManager {
     /**
      * Attempt to interrupt/terminate execution in the kernel
      */
-    public terminateExecution(docPath: string) {
+    public async terminateExecution(docPath: string) {
         const info = this.kernelMap.get(docPath);
-        if (!info) {
+        const sockets = this.jmqSockets.get(docPath)
+        if (!info || !sockets) {
           console.log(`No kernel to terminate for docPath=${docPath}`);
           return;
         }
-        // Send an interrupt_request on control channel
-        // (We create or reuse a control socket similarly to how we did shellSocket)
+
+        // Try interrupt_request on control channel first
         console.log(`Sending interrupt_request on control channel: doc=${docPath}`);
-        // If you truly need a persistent control socket, store it in memory too
-        // This short example re-creates one:
-        const controlSocket = new jmq.Socket('DEALER', info.scheme, info.key);
-        controlSocket.connect(`tcp://127.0.0.1:${info.controlPort}`).then(() => {
-          const interruptMsg = new jmq.Message({
+        const controlSocket = sockets.control;
+        const interruptMsg = new jmq.Message({
             header: {
-              msg_id: crypto.randomUUID(),
-              username: 'test',
-              session: crypto.randomUUID(),
-              msg_type: 'interrupt_request',
-              version: '5.3',
+                msg_id: crypto.randomUUID(),
+                username: 'user',
+                session: crypto.randomUUID(),
+                msg_type: 'interrupt_request',
+                version: '5.3',
             },
             content: { reason: 'user' },
-          });
-          controlSocket.send(interruptMsg);
-          controlSocket.close(); 
         });
+        await controlSocket.send(interruptMsg);
+        
+        // Wait for interrupt_reply with timeout
+        let interruptSucceeded = false;
+        try {
+            const replyPromise = controlSocket.receive();
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Interrupt reply timeout')), 1000);
+            });
+            
+            const reply = await Promise.race([replyPromise, timeoutPromise]) as jmq.Message;
+            if (reply && reply.header?.msg_type === 'interrupt_reply') {
+                console.log('Received interrupt_reply');
+                interruptSucceeded = true;
+            }
+        } catch (err) {
+            console.warn('Error or timeout waiting for interrupt_reply:', err);
+        }
 
-        // Approach 2: send SIGINT to the process
-        // (some kernels handle SIGINT; some require the control channel message)
-        // if (child.pid){
-        //     try {
-        //         process.kill(child.pid, 'SIGINT');
-        //     } catch (err) {
-        //         console.error('Error sending SIGINT to kernel process:', err);
-        //     }
-        // }
+        // If interrupt_request failed, try SIGINT as fallback
+        if (!interruptSucceeded) {
+            console.log('Interrupt request failed, trying SIGINT...');
+            const child = info.process;
+            if (child.pid) {
+                try {
+                    process.kill(child.pid, 'SIGINT');
+                    console.log('Sent SIGINT to kernel process');
+                    // Give SIGINT a moment to take effect
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                } catch (err) {
+                    console.error('Error sending SIGINT to kernel process:', err);
+                }
+            }
+        }
         
     }
 
@@ -428,6 +447,7 @@ export class KernelManager {
         this.processes.clear();
         this.executionQueue.clear();
         this.processing.clear();
+        this.kernelMap.clear();
 
         for (const [docPath, sockets] of this.jmqSockets.entries()) {
             sockets.shell.close();

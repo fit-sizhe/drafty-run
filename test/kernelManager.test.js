@@ -75,6 +75,8 @@ print("Hello from Python " + sys.version.split()[0])
   });
 
   it('should interrupt a long-running command and still allow further execution', async function() {
+    this.timeout(5000); // Increase timeout to 30s
+
     // 1) Start something that never ends (or sleeps for a while)
     // We'll do "while True: pass" to force a busy loop
     const code = `
@@ -82,17 +84,21 @@ import time
 while True:
     time.sleep(0.1)
 `;
-    // Fire off the execution
+    console.log('Starting infinite loop execution...');
     const execPromise = km.queueCodeExecution(DOC_PATH, code);
 
     // 2) Wait a bit, then interrupt
+    console.log('Waiting 1s before interrupting...');
     await new Promise(res => setTimeout(res, 1000)); // allow it to run a little
-    km.terminateExecution(DOC_PATH);
+    console.log('Sending interrupt...');
+    await km.terminateExecution(DOC_PATH);
 
     let didThrow = false;
     try {
+      console.log('Waiting for execPromise to resolve/reject...');
       await execPromise;
     } catch (err) {
+      console.log('Caught error:', err.message);
       // We might see an error from KeyboardInterrupt or similar.
       didThrow = true;
     }
@@ -100,7 +106,12 @@ while True:
     // We expect the code either to be forcibly interrupted or to produce partial output
     assert.ok(didThrow, 'Expected an error or forced interrupt from infinite loop');
 
+    // Wait a bit for the kernel to stabilize after interrupt
+    console.log('Waiting 2s for kernel to stabilize...');
+    await new Promise(res => setTimeout(res, 2000));
+
     // 3) Now run a new code cell to verify kernel is still responsive
+    console.log('Testing if kernel is still responsive...');
     const result = await km.queueCodeExecution(DOC_PATH, 'print("Still alive?")');
     const textOutputs = result.outputs.filter(o => o.type === 'text');
     assert.ok(
