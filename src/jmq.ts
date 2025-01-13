@@ -1,37 +1,3 @@
-/*
- * BSD 3-Clause License
- *
- * Copyright (c) 2015, Nicolas Riesco and others as credited in the AUTHORS file
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation
- * and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software without
- * specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- */
-
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import * as zmq from 'zeromq';
@@ -263,16 +229,12 @@ export class Message {
  * Interface for ZMQ socket methods we need to implement
  */
 interface IZmqSocket {
-    bindSync(address: string): void;
+    bind(address: string): Promise<void>;
     connect(address: string): void;
     close(): void;
-    send(msg: any, flags?: number): void;
-    on(event: string, listener: (...args: any[]) => void): void;
-    once(event: string, listener: (...args: any[]) => void): void;
-    removeListener(event: string, listener: (...args: any[]) => void): void;
-    removeAllListeners(event?: string): void;
-    getsockopt(option: number): any;
-    setsockopt(option: number, value: any): void;
+    send(msg: Array<Buffer | string>): Promise<void>;
+    receive(): Promise<Buffer[]>;
+    [Symbol.asyncIterator](): AsyncIterator<Buffer[]>;
 }
 
 /**
@@ -294,9 +256,67 @@ export class Socket {
      * @param key Optional hashing key (default: '')
      */
     constructor(socketType: number | string, scheme = 'sha256', key = '') {
-        // Handle string socket types for backward compatibility
-        const type = typeof socketType === 'string' ? (zmq as any)[socketType.toUpperCase()] : socketType;
-        this.socket = new (zmq as any).Socket(type);
+        // Map string socket types to zmq socket type constants
+        let type: number;
+        if (typeof socketType === 'string') {
+            const socketMap: Record<string, number> = {
+                router: 6,  // ZMQ_ROUTER
+                dealer: 5,  // ZMQ_DEALER
+                pub: 1,     // ZMQ_PUB
+                sub: 2,     // ZMQ_SUB
+                pair: 0     // ZMQ_PAIR
+            };
+            const mappedType = socketMap[socketType.toLowerCase()];
+            if (typeof mappedType !== 'number') {
+                throw new Error('Invalid socket type: ' + socketType);
+            }
+            type = mappedType;
+        } else {
+            type = socketType;
+        }
+        // Create socket using the appropriate ZMQ socket class
+        if (typeof socketType === 'string') {
+            switch (socketType.toLowerCase()) {
+                case 'router':
+                    this.socket = new zmq.Router() as IZmqSocket;
+                    break;
+                case 'dealer':
+                    this.socket = new zmq.Dealer() as IZmqSocket;
+                    break;
+                case 'pub':
+                    this.socket = new zmq.Publisher() as unknown as IZmqSocket;
+                    break;
+                case 'sub':
+                    this.socket = new zmq.Subscriber() as unknown as IZmqSocket;
+                    break;
+                case 'pair':
+                    this.socket = new zmq.Pair() as IZmqSocket;
+                    break;
+                default:
+                    throw new Error('Invalid socket type: ' + socketType);
+            }
+        } else {
+            // For numeric types, map to the appropriate socket class
+            switch (socketType) {
+                case 6: // ZMQ_ROUTER
+                    this.socket = new zmq.Router() as unknown as IZmqSocket;
+                    break;
+                case 5: // ZMQ_DEALER
+                    this.socket = new zmq.Dealer() as unknown as IZmqSocket;
+                    break;
+                case 1: // ZMQ_PUB
+                    this.socket = new zmq.Publisher() as unknown as IZmqSocket;
+                    break;
+                case 2: // ZMQ_SUB
+                    this.socket = new zmq.Subscriber() as unknown as IZmqSocket;
+                    break;
+                case 0: // ZMQ_PAIR
+                    this.socket = new zmq.Pair() as unknown as IZmqSocket;
+                    break;
+                default:
+                    throw new Error('Invalid socket type: ' + socketType);
+            }
+        }
         this._jmp = {
             scheme,
             key,
@@ -307,8 +327,8 @@ export class Socket {
     /**
      * Bind socket to an address
      */
-    bindSync(address: string): void {
-        this.socket.bindSync(address);
+    async bindSync(address: string): Promise<void> {
+        await this.socket.bind(address);
     }
 
     /**
@@ -325,19 +345,6 @@ export class Socket {
         this.socket.close();
     }
 
-    /**
-     * Get socket option
-     */
-    getsockopt(option: number): any {
-        return this.socket.getsockopt(option);
-    }
-
-    /**
-     * Set socket option
-     */
-    setsockopt(option: number, value: any): void {
-        this.socket.setsockopt(option, value);
-    }
 
     /**
      * Send a message over the socket
@@ -345,115 +352,38 @@ export class Socket {
      * @param flags Optional send flags
      * @returns this socket instance for chaining
      */
-    send(message: Message | string | Buffer | any[], flags?: number): this {
+    async send(message: Message | string | Buffer | any[]): Promise<this> {
         if (message instanceof Message) {
             log("SOCKET: SEND:", message);
-            this.socket.send(message._encode(this._jmp.scheme, this._jmp.key), flags);
+            await this.socket.send(message._encode(this._jmp.scheme, this._jmp.key));
+        } else if (Array.isArray(message)) {
+            await this.socket.send(message.map(m => Buffer.from(m)));
         } else {
-            this.socket.send(message, flags);
+            await this.socket.send([Buffer.from(message)]);
         }
         return this;
     }
 
     /**
-     * Add an event listener
-     * @param event Event name
-     * @param listener Event listener function
-     * @returns this socket instance for chaining
+     * Receive a message from the socket
+     * @returns Promise resolving to the received message
      */
-    on(event: string, listener: (...args: any[]) => void): this {
-        if (event !== 'message') {
-            this.socket.on(event, listener);
-            return this;
-        }
-
-        const _listener: IMessageListener = {
-            unwrapped: listener,
-            wrapped: ((...args: any[]) => {
-                const message = Message._decode(args, this._jmp.scheme, this._jmp.key);
-                if (message) {
-                    listener(message);
-                }
-            }).bind(this)
-        };
-
-        this._jmp._listeners.push(_listener);
-        this.socket.on(event, _listener.wrapped);
-        return this;
+    async receive(): Promise<Message | null> {
+        const frames = await this.socket.receive();
+        return Message._decode(frames, this._jmp.scheme, this._jmp.key);
     }
 
     /**
-     * Add a one-time event listener
-     * @param event Event name
-     * @param listener Event listener function
-     * @returns this socket instance for chaining
+     * Async iterator for receiving messages
      */
-    once(event: string, listener: (...args: any[]) => void): this {
-        if (event !== 'message') {
-            this.socket.once(event, listener);
-            return this;
+    async *[Symbol.asyncIterator](): AsyncIterator<Message> {
+        for await (const frames of this.socket) {
+            const message = Message._decode(frames, this._jmp.scheme, this._jmp.key);
+            if (message) {
+                yield message;
+            }
         }
-
-        const _listener: IMessageListener = {
-            unwrapped: listener,
-            wrapped: ((...args: any[]) => {
-                const message = Message._decode(args, this._jmp.scheme, this._jmp.key);
-                if (message) {
-                    try {
-                        listener(message);
-                    } catch (error) {
-                        this.removeListener(event, listener);
-                        throw error;
-                    }
-                }
-                this.removeListener(event, listener);
-            }).bind(this)
-        };
-
-        this._jmp._listeners.push(_listener);
-        this.socket.on(event, _listener.wrapped);
-        return this;
     }
-
-    /**
-     * Remove an event listener
-     * @param event Event name
-     * @param listener Event listener function to remove
-     * @returns this socket instance for chaining
-     */
-    removeListener(event: string, listener: (...args: any[]) => void): this {
-        if (event !== 'message') {
-            this.socket.removeListener(event, listener);
-            return this;
-        }
-
-        const index = this._jmp._listeners.findIndex(l => l.unwrapped === listener);
-        if (index !== -1) {
-            const _listener = this._jmp._listeners[index];
-            this._jmp._listeners.splice(index, 1);
-            this.socket.removeListener(event, _listener.wrapped);
-        }
-
-        return this;
-    }
-
-    /**
-     * Remove all event listeners
-     * @param event Optional event name
-     * @returns this socket instance for chaining
-     */
-    removeAllListeners(event?: string): this {
-        if (arguments.length === 0 || event === 'message') {
-            this._jmp._listeners = [];
-        }
-        this.socket.removeAllListeners(event);
-        return this;
-    }
-
-    /**
-     * Alias for on() method
-     */
-    addListener = this.on;
 }
 
 // Export the module
