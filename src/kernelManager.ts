@@ -9,6 +9,7 @@ import { CellOutput } from './types';
 import * as jmq from './jmq';
 import * as net from 'net';
 import * as crypto from 'crypto';
+import * as path from 'path';
 
 
 /** Quickly find an ephemeral free port for binding */
@@ -131,7 +132,11 @@ export class KernelManager {
                 `--IPKernelApp.hb_port=${hbPort}`,
                 `--Session.key=${key}`,
                 `--Session.signature_scheme=${signatureScheme}`,
-              ]);
+              ], 
+              {
+                cwd: path.dirname(docPath),
+              }
+            );
       
               // Keep track of whether the kernel closed unexpectedly
               const exitPromise = new Promise<void>((_, reject) => {
