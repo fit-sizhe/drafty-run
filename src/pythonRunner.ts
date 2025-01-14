@@ -1,6 +1,6 @@
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
-import * as path from 'path';
-import { CellOutput } from './types';
+import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import * as path from "path";
+import { CellOutput } from "./types";
 
 const PYTHON_SETUP_CODE = `
 import sys
@@ -114,223 +114,232 @@ plt.pause = _realtime_pause
 `;
 
 interface ExecutionItem {
-    code: string;
-    onDataCallback?: (partialOutput: CellOutput) => void;
-    resolve: (val: { outputs: CellOutput[] }) => void;
-    reject: (err: unknown) => void;
+  code: string;
+  onDataCallback?: (partialOutput: CellOutput) => void;
+  resolve: (val: { outputs: CellOutput[] }) => void;
+  reject: (err: unknown) => void;
 }
 
 export class PythonRunner {
-    private processes: Map<string, ChildProcessWithoutNullStreams> = new Map();
-    // one execution queue per doc
-    private executionQueue: Map<string, ExecutionItem[]> = new Map();
-    private processing: Map<string, boolean> = new Map();
+  private processes: Map<string, ChildProcessWithoutNullStreams> = new Map();
+  // one execution queue per doc
+  private executionQueue: Map<string, ExecutionItem[]> = new Map();
+  private processing: Map<string, boolean> = new Map();
 
-    constructor() {}
+  constructor() {}
 
-    // start a persistent python process per doc
-    // only kill the process on doc close or session clear
-    public startProcessForDoc(
-        docPath: string,
-        pythonPath: string,
-        onDataCallback?: (partialOutput: CellOutput) => void
-    ): void {
-
-        if (this.processes.has(docPath)) {
-            return;
-        }
-
-        const child = spawn(pythonPath, ['-u', '-i'], {
-            cwd: path.dirname(docPath),
-        });
-
-        child.stdout.on('data', (data: Buffer) => {
-            onDataCallback?.({
-                type: 'text',
-                timestamp: Date.now(),
-                content: data.toString(),
-                stream: 'stdout'
-            });
-        });
-
-        child.stderr.on('data', (data: Buffer) => {
-            onDataCallback?.({
-                type: 'text',
-                timestamp: Date.now(),
-                content: data.toString(),
-                stream: 'stderr'
-            });
-        });
-
-        child.on('close', (code, signal) => {
-            console.log(`Python process closed with code ${code}, signal ${signal}`);
-            this.processes.delete(docPath);
-            this.executionQueue.delete(docPath);
-            this.processing.delete(docPath);
-        });
-
-        this.processes.set(docPath, child);
-        this.executionQueue.set(docPath, []);
-        this.processing.set(docPath, false);
-
-        const wrappedSetup = `exec("""${PYTHON_SETUP_CODE}""")`;
-        child.stdin.write(wrappedSetup + "\n");
+  // start a persistent python process per doc
+  // only kill the process on doc close or session clear
+  public startProcessForDoc(
+    docPath: string,
+    pythonPath: string,
+    onDataCallback?: (partialOutput: CellOutput) => void,
+  ): void {
+    if (this.processes.has(docPath)) {
+      return;
     }
 
-    public queueCodeExecution(
-        docPath: string,
-        code: string,
-        onDataCallback?: (partialOutput: CellOutput) => void
-    ): Promise<{ outputs: CellOutput[] }> {
-        const item: ExecutionItem = {
-            code,
-            onDataCallback,
-            resolve: () => {},
-            reject: () => {}
+    const child = spawn(pythonPath, ["-u", "-i"], {
+      cwd: path.dirname(docPath),
+    });
+
+    child.stdout.on("data", (data: Buffer) => {
+      onDataCallback?.({
+        type: "text",
+        timestamp: Date.now(),
+        content: data.toString(),
+        stream: "stdout",
+      });
+    });
+
+    child.stderr.on("data", (data: Buffer) => {
+      onDataCallback?.({
+        type: "text",
+        timestamp: Date.now(),
+        content: data.toString(),
+        stream: "stderr",
+      });
+    });
+
+    child.on("close", (code, signal) => {
+      console.log(`Python process closed with code ${code}, signal ${signal}`);
+      this.processes.delete(docPath);
+      this.executionQueue.delete(docPath);
+      this.processing.delete(docPath);
+    });
+
+    this.processes.set(docPath, child);
+    this.executionQueue.set(docPath, []);
+    this.processing.set(docPath, false);
+
+    const wrappedSetup = `exec("""${PYTHON_SETUP_CODE}""")`;
+    child.stdin.write(wrappedSetup + "\n");
+  }
+
+  public queueCodeExecution(
+    docPath: string,
+    code: string,
+    onDataCallback?: (partialOutput: CellOutput) => void,
+  ): Promise<{ outputs: CellOutput[] }> {
+    const item: ExecutionItem = {
+      code,
+      onDataCallback,
+      resolve: () => {},
+      reject: () => {},
+    };
+
+    const promise = new Promise<{ outputs: CellOutput[] }>(
+      (resolve, reject) => {
+        item.resolve = resolve;
+        item.reject = reject;
+      },
+    );
+
+    const queue = this.executionQueue.get(docPath);
+    if (!queue) {
+      throw new Error(`No Python process initialized for docPath=${docPath}`);
+    }
+    queue.push(item);
+
+    if (!this.processing.get(docPath)) {
+      this.processNext(docPath);
+    }
+
+    return promise;
+  }
+
+  public terminateExecution(docPath: string) {
+    const child = this.processes.get(docPath);
+    if (!child) {
+      console.log(`No child process to terminate for docPath=${docPath}`);
+      return;
+    }
+    console.log(
+      `Sending 'KeyboardInterrupt' to Python process for docPath=${docPath}`,
+    );
+    child.stdin.write("\nraise KeyboardInterrupt\n");
+  }
+
+  private async processNext(docPath: string) {
+    const queue = this.executionQueue.get(docPath);
+    if (!queue || queue.length === 0) {
+      this.processing.set(docPath, false);
+      return;
+    }
+
+    this.processing.set(docPath, true);
+    const currentItem = queue.shift()!;
+
+    try {
+      const result = await this.executeCodeImpl(
+        docPath,
+        currentItem.code,
+        currentItem.onDataCallback,
+      );
+      currentItem.resolve(result);
+    } catch (err) {
+      currentItem.reject(err);
+    }
+
+    this.processNext(docPath);
+  }
+
+  private executeCodeImpl(
+    docPath: string,
+    code: string,
+    onDataCallback?: (partialOutput: CellOutput) => void,
+  ): Promise<{ outputs: CellOutput[] }> {
+    const child = this.processes.get(docPath);
+    if (!child) {
+      throw new Error(`No process for docPath: ${docPath}`);
+    }
+
+    // Remove any prior stdout listener
+    child.stdout.removeAllListeners("data");
+
+    let finalOutputs: CellOutput[] = [];
+    let dataBuffer = "";
+
+    const promise = new Promise<{ outputs: CellOutput[] }>(
+      (resolve, reject) => {
+        const onData = (chunk: Buffer) => {
+          dataBuffer += chunk.toString("utf8");
+          const lines = dataBuffer.split("\n");
+          // last element may be incomplete, put it back into dataBuffer
+          dataBuffer = lines.pop() || "";
+
+          // each item in `lines` is a complete line
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) continue;
+
+            if (line.startsWith("PARTIAL_OUTPUTS:")) {
+              // realtime partial output
+              const jsonStr = line.slice("PARTIAL_OUTPUTS:".length).trim();
+              try {
+                const partialObj = JSON.parse(jsonStr);
+                onDataCallback?.({
+                  ...partialObj,
+                  timestamp: Date.now(),
+                });
+              } catch (err) {
+                console.error("Failed to parse PARTIAL_OUTPUTS JSON:", err);
+              }
+            } else if (line.startsWith("OUTPUTS:")) {
+              const jsonStr = line.slice("OUTPUTS:".length).trim();
+              try {
+                finalOutputs = JSON.parse(jsonStr);
+              } catch (err) {
+                console.error("Failed to parse OUTPUTS JSON:", err);
+              }
+            } else if (line.startsWith("STATE:")) {
+              child.stdout.off("data", onData);
+              // TODO: make this arm more useful
+              // not printing anything for now
+              resolve({ outputs: [] });
+            } else if (line.includes("KeyboardInterrupt")) {
+              onDataCallback?.({
+                type: "text",
+                timestamp: Date.now(),
+                content: "Code interrupted by user (KeyboardInterrupt).",
+                stream: "stderr",
+              });
+            } else {
+              onDataCallback?.({
+                type: "text",
+                timestamp: Date.now(),
+                content: line,
+                stream: "stdout",
+              });
+            }
+          }
         };
 
-        const promise = new Promise<{ outputs: CellOutput[] }>((resolve, reject) => {
-            item.resolve = resolve;
-            item.reject = reject;
+        child.stdout.on("data", onData);
+
+        child.stderr.on("data", (chunk: Buffer) => {
+          const errorLine = chunk.toString("utf8");
+          onDataCallback?.({
+            type: "text",
+            timestamp: Date.now(),
+            content: errorLine,
+            stream: "stderr",
+          });
         });
 
-        const queue = this.executionQueue.get(docPath);
-        if (!queue) {
-            throw new Error(`No Python process initialized for docPath=${docPath}`);
-        }
-        queue.push(item);
-
-        if (!this.processing.get(docPath)) {
-            this.processNext(docPath);
-        }
-
-        return promise;
-    }
-
-    public terminateExecution(docPath: string) {
-        const child = this.processes.get(docPath);
-        if (!child) {
-            console.log(`No child process to terminate for docPath=${docPath}`);
-            return;
-        }
-        console.log(`Sending 'KeyboardInterrupt' to Python process for docPath=${docPath}`);
-        child.stdin.write("\nraise KeyboardInterrupt\n");
-    }
-
-    private async processNext(docPath: string) {
-        const queue = this.executionQueue.get(docPath);
-        if (!queue || queue.length === 0) {
-            this.processing.set(docPath, false);
-            return;
-        }
-
-        this.processing.set(docPath, true);
-        const currentItem = queue.shift()!;
-        
-        try {
-            const result = await this.executeCodeImpl(docPath, currentItem.code, currentItem.onDataCallback);
-            currentItem.resolve(result);
-        } catch (err) {
-            currentItem.reject(err);
-        }
-
-        this.processNext(docPath);
-    }
-
-    private executeCodeImpl(
-        docPath: string,
-        code: string,
-        onDataCallback?: (partialOutput: CellOutput) => void
-    ): Promise<{ outputs: CellOutput[] }> {
-        const child = this.processes.get(docPath);
-        if (!child) {
-            throw new Error(`No process for docPath: ${docPath}`);
-        }
-    
-        // Remove any prior stdout listener
-        child.stdout.removeAllListeners('data');
-    
-        let finalOutputs: CellOutput[] = [];
-        let dataBuffer = '';
-    
-        const promise = new Promise<{ outputs: CellOutput[] }>((resolve, reject) => {
-            const onData = (chunk: Buffer) => {
-                dataBuffer += chunk.toString('utf8');
-                const lines = dataBuffer.split('\n');
-                // last element may be incomplete, put it back into dataBuffer
-                dataBuffer = lines.pop() || '';
-    
-                // each item in `lines` is a complete line
-                for (const rawLine of lines) {
-                    const line = rawLine.trim();
-                    if (!line) continue;
-    
-                    if (line.startsWith('PARTIAL_OUTPUTS:')) {
-                        // realtime partial output
-                        const jsonStr = line.slice('PARTIAL_OUTPUTS:'.length).trim();
-                        try {
-                            const partialObj = JSON.parse(jsonStr);
-                            onDataCallback?.({
-                                ...partialObj,
-                                timestamp: Date.now()
-                            });
-                        } catch (err) {
-                            console.error('Failed to parse PARTIAL_OUTPUTS JSON:', err);
-                        }
-                    } else if (line.startsWith('OUTPUTS:')) {
-                        const jsonStr = line.slice('OUTPUTS:'.length).trim();
-                        try {
-                            finalOutputs = JSON.parse(jsonStr);
-                        } catch (err) {
-                            console.error('Failed to parse OUTPUTS JSON:', err);
-                        }
-                    } else if (line.startsWith('STATE:')) {
-                        child.stdout.off('data', onData);
-                        // TODO: make this arm more useful
-                        // not printing anything for now
-                        resolve({ outputs: [] });
-                    } else if (line.includes('KeyboardInterrupt')) {
-                        onDataCallback?.({
-                            type: 'text',
-                            timestamp: Date.now(),
-                            content: 'Code interrupted by user (KeyboardInterrupt).',
-                            stream: 'stderr'
-                        });
-                    } else {
-                        onDataCallback?.({
-                            type: 'text',
-                            timestamp: Date.now(),
-                            content: line,
-                            stream: 'stdout'
-                        });
-                    }
-                }
-            };
-    
-            child.stdout.on('data', onData);
-    
-            child.stderr.on('data', (chunk: Buffer) => {
-                const errorLine = chunk.toString('utf8');
-                onDataCallback?.({
-                    type: 'text',
-                    timestamp: Date.now(),
-                    content: errorLine,
-                    stream: 'stderr'
-                });
-            });
-    
-            child.on('close', (code) => {
-                if (code !== 0) {
-                    reject(new Error(`Python process exited with code ${code}`));
-                }
-            });
+        child.on("close", (code) => {
+          if (code !== 0) {
+            reject(new Error(`Python process exited with code ${code}`));
+          }
         });
-    
-        // Base64-encode the user code
-        const codeBase64 = Buffer.from(code, 'utf8').toString('base64');
-    
-        // wrap everything in a single exec("""...""") block
-        const wrappedCode = `
+      },
+    );
+
+    // Base64-encode the user code
+    const codeBase64 = Buffer.from(code, "utf8").toString("base64");
+
+    // wrap everything in a single exec("""...""") block
+    const wrappedCode = `
 exec("""import base64
 decoded = base64.b64decode('${codeBase64}').decode('utf-8')
 try:
@@ -344,40 +353,40 @@ except Exception as e:
 print('OUTPUTS:', json.dumps(output_collector._outputs))
 print('STATE:', json.dumps({}))
 """)`;
-    
-        child.stdin.write(wrappedCode + '\n');
-        return promise;
-    }
-    
-    public disposeRunner(docPath: string): void {
-        const child = this.processes.get(docPath);
-        if (child) {
-            try {
-                child.kill();
-            } catch (err) {
-                console.error('Error killing Python process:', err);
-            }
-            this.processes.delete(docPath);
-            this.executionQueue.delete(docPath);
-            this.processing.delete(docPath);
-        }
-    }
 
-    public disposeAll(): void {
-        for (const [docPath, child] of this.processes.entries()) {
-            try {
-                child.kill();
-            } catch (err) {
-                console.error('Error killing Python process:', err);
-            }
-        }
-        this.processes.clear();
-        this.executionQueue.clear();
-        this.processing.clear();
-    }
+    child.stdin.write(wrappedCode + "\n");
+    return promise;
+  }
 
-    public clearState(): void {
-        // Clear user-defined state if needed
-        // The Python process remains alive
+  public disposeRunner(docPath: string): void {
+    const child = this.processes.get(docPath);
+    if (child) {
+      try {
+        child.kill();
+      } catch (err) {
+        console.error("Error killing Python process:", err);
+      }
+      this.processes.delete(docPath);
+      this.executionQueue.delete(docPath);
+      this.processing.delete(docPath);
     }
+  }
+
+  public disposeAll(): void {
+    for (const [_, child] of this.processes.entries()) {
+      try {
+        child.kill();
+      } catch (err) {
+        console.error("Error killing Python process:", err);
+      }
+    }
+    this.processes.clear();
+    this.executionQueue.clear();
+    this.processing.clear();
+  }
+
+  public clearState(): void {
+    // Clear user-defined state if needed
+    // The Python process remains alive
+  }
 }

@@ -1,11 +1,11 @@
-import * as vscode from 'vscode';
-import { CodeBlockExecution, CellOutput } from './types';
-import { Environment } from './env_setup';
+import * as vscode from "vscode";
+import { CodeBlockExecution, CellOutput } from "./types";
+import { Environment } from "./env_setup";
 
 interface PanelInfo {
-    panel: vscode.WebviewPanel;
-    messageDisposable?: vscode.Disposable;
-    maxResultHeight: number;
+  panel: vscode.WebviewPanel;
+  messageDisposable?: vscode.Disposable;
+  maxResultHeight: number;
 }
 
 export class WebviewManager {
@@ -17,159 +17,165 @@ export class WebviewManager {
   private constructor() {}
 
   static getInstance(): WebviewManager {
-      if (!this.instance) {
-          this.instance = new WebviewManager();
-      }
-      return this.instance;
+    if (!this.instance) {
+      this.instance = new WebviewManager();
+    }
+    return this.instance;
   }
 
   /**
    * Create or reuse a panel for the given docPath.
    */
   async ensurePanel(
-      context: vscode.ExtensionContext, 
-      docPath: string,
-      messageHandler: (message: any, ctx: vscode.ExtensionContext, panel: vscode.WebviewPanel) => void,
-      onPanelDisposed: (docPath: string) => void,   // run cleanup when webview is closed
-      title?: string
+    context: vscode.ExtensionContext,
+    docPath: string,
+    messageHandler: (
+      message: any,
+      ctx: vscode.ExtensionContext,
+      panel: vscode.WebviewPanel,
+    ) => void,
+    onPanelDisposed: (docPath: string) => void, // run cleanup when webview is closed
+    title?: string,
   ): Promise<void> {
+    if (!this.panels.has(docPath)) {
+      // Create a new panel
+      const filename = title || "Code Execution Results";
+      const panel = vscode.window.createWebviewPanel(
+        "codeResults",
+        filename,
+        vscode.ViewColumn.Beside,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+        },
+      );
 
-      if (!this.panels.has(docPath)) {
-          // Create a new panel
-          const filename = title || 'Code Execution Results';
-          const panel = vscode.window.createWebviewPanel(
-              'codeResults',
-              filename,
-              vscode.ViewColumn.Beside,
-              {
-                  enableScripts: true,
-                  retainContextWhenHidden: true
-              }
-          );
+      const info: PanelInfo = {
+        panel,
+        maxResultHeight: 400,
+      };
 
-          const info: PanelInfo = {
-              panel,
-              maxResultHeight: 400,
-          };
+      // Set up message handling
+      info.messageDisposable = panel.webview.onDidReceiveMessage((msg) => {
+        messageHandler(msg, context, panel);
+      });
 
-          // Set up message handling
-          info.messageDisposable = panel.webview.onDidReceiveMessage(msg => {
-            messageHandler(msg, context, panel);
-          });
+      panel.onDidDispose(() => {
+        info.messageDisposable?.dispose();
+        this.panels.delete(docPath);
+        // Tell extension.ts "the panel for docPath was closed"
+        onPanelDisposed(docPath);
+      });
 
-          panel.onDidDispose(() => {
-            info.messageDisposable?.dispose();
-            this.panels.delete(docPath);
-            // Tell extension.ts "the panel for docPath was closed"
-            onPanelDisposed(docPath);
-        });
-
-          this.panels.set(docPath, info);
-      }
+      this.panels.set(docPath, info);
+    }
   }
 
   /**
    * Reveal an existing panel (if any) for docPath.
    */
   revealPanel(docPath: string) {
-      const info = this.panels.get(docPath);
-      if (info) {
-          info.panel.reveal(vscode.ViewColumn.Beside, true);
-      }
+    const info = this.panels.get(docPath);
+    if (info) {
+      info.panel.reveal(vscode.ViewColumn.Beside, true);
+    }
   }
 
   getPanel(docPath: string): vscode.WebviewPanel | undefined {
-      return this.panels.get(docPath)?.panel;
+    return this.panels.get(docPath)?.panel;
   }
 
   /**
    * Reverse lookup: given a panel, find which docPath it belongs to.
    */
   getDocPathForPanel(panel: vscode.WebviewPanel): string | undefined {
-      for (const [docPath, info] of this.panels.entries()) {
-          if (info.panel === panel) {
-              return docPath;
-          }
+    for (const [docPath, info] of this.panels.entries()) {
+      if (info.panel === panel) {
+        return docPath;
       }
-      return undefined;
+    }
+    return undefined;
   }
 
   /**
    * Update the max height for a given docPath’s panel.
    */
   setMaxResultHeight(docPath: string, height: number): void {
-      const info = this.panels.get(docPath);
-      if (info) {
-          info.maxResultHeight = height;
-      }
+    const info = this.panels.get(docPath);
+    if (info) {
+      info.maxResultHeight = height;
+    }
   }
 
   /**
    * Create the HTML content for this docPath's webview and update it.
    */
   updateContent(
-      docPath: string,
-      blocks: Map<string, CodeBlockExecution>,
-      environments: Environment[],
-      selectedPath: string
+    docPath: string,
+    blocks: Map<string, CodeBlockExecution>,
+    environments: Environment[],
+    selectedPath: string,
   ): void {
-      const info = this.panels.get(docPath);
-      if (!info) {
-          return;
-      }
-      info.panel.webview.html = this.getWebviewContent(
-          blocks, environments, selectedPath, info.maxResultHeight
-      );
+    const info = this.panels.get(docPath);
+    if (!info) {
+      return;
+    }
+    info.panel.webview.html = this.getWebviewContent(
+      blocks,
+      environments,
+      selectedPath,
+      info.maxResultHeight,
+    );
   }
 
   /**
    * Optionally close all panels on extension deactivation.
    */
   disposeAllPanels() {
-      for (const [, info] of this.panels) {
-          info.messageDisposable?.dispose();
-          info.panel.dispose();
-      }
-      this.panels.clear();
+    for (const [, info] of this.panels) {
+      info.messageDisposable?.dispose();
+      info.panel.dispose();
+    }
+    this.panels.clear();
   }
 
   // The rest of your existing getWebviewContent(...) logic:
   private getWebviewContent(
-      blocks: Map<string, CodeBlockExecution>,
-      environments: Environment[],
-      selectedPath: string,
-      maxResultHeight: number
+    blocks: Map<string, CodeBlockExecution>,
+    environments: Environment[],
+    selectedPath: string,
+    maxResultHeight: number,
   ): string {
-        // Build <option> tags from environments
-        const optionsHtml = environments
-            .map((env) => {
-                const selectedAttr = env.path === selectedPath ? 'selected' : '';
-                return `<option value="${env.path}" ${selectedAttr}>${env.label}</option>`;
-            })
-            .join('');
+    // Build <option> tags from environments
+    const optionsHtml = environments
+      .map((env) => {
+        const selectedAttr = env.path === selectedPath ? "selected" : "";
+        return `<option value="${env.path}" ${selectedAttr}>${env.label}</option>`;
+      })
+      .join("");
 
-        // We only want to display blocks that have actually run or are running
-        const renderedBlocks = Array.from(blocks.values())
-            .filter((b) => b.metadata.status !== 'pending')
-            .sort((a, b) => a.position - b.position);
+    // We only want to display blocks that have actually run or are running
+    const renderedBlocks = Array.from(blocks.values())
+      .filter((b) => b.metadata.status !== "pending")
+      .sort((a, b) => a.position - b.position);
 
-        // Build each block's HTML
-        const outputHtml = renderedBlocks
-            .map((block) => {
-                const statusClass = `status-${block.metadata.status}`;
-                const executionTime = block.metadata.executionTime
-                    ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)`
-                    : '';
-                const runLabel = block.metadata.runNumber
-                    ? `Output [${block.metadata.runNumber}]`
-                    : 'Output [?]';
+    // Build each block's HTML
+    const outputHtml = renderedBlocks
+      .map((block) => {
+        const statusClass = `status-${block.metadata.status}`;
+        const executionTime = block.metadata.executionTime
+          ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)`
+          : "";
+        const runLabel = block.metadata.runNumber
+          ? `Output [${block.metadata.runNumber}]`
+          : "Output [?]";
 
-                const blockContainerId = `result-block-${"block-" + block.position}`;
-                const outputsHtml = block.outputs
-                    .map((output) => this.createOutputHtml(output))
-                    .join('\n');
+        const blockContainerId = `result-block-${"block-" + block.position}`;
+        const outputsHtml = block.outputs
+          .map((output) => this.createOutputHtml(output))
+          .join("\n");
 
-                return `
+        return `
                     <div class="block-container ${statusClass}"
                          id="${blockContainerId}"
                          style="max-height: ${maxResultHeight}px; overflow-y: auto;">
@@ -181,10 +187,10 @@ export class WebviewManager {
                             ${outputsHtml}
                         </div>
                     </div>`;
-            })
-            .join('\n');
+      })
+      .join("\n");
 
-        return /* html */ `<!DOCTYPE html>
+    return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
@@ -461,43 +467,43 @@ export class WebviewManager {
     </script>
 </body>
 </html>`;
-    }
+  }
 
-    private createOutputHtml(output: CellOutput): string {
-        switch (output.type) {
-            case 'text':
-                return `
-                    <div class="output text-output ${output.stream || ''}">
+  private createOutputHtml(output: CellOutput): string {
+    switch (output.type) {
+      case "text":
+        return `
+                    <div class="output text-output ${output.stream || ""}">
                         ${this.escapeHtml(output.content)}
                     </div>`;
-            case 'image':
-                return `
+      case "image":
+        return `
                     <div class="output image-output">
-                        <img class="live-plot" src="data:image/${output.format || 'png'};base64,${output.data}" 
+                        <img class="live-plot" src="data:image/${output.format || "png"};base64,${output.data}" 
                              alt="Output visualization" />
                     </div>`;
-            case 'error':
-                return `
+      case "error":
+        return `
                     <div class="output error-output">
                         <div class="error-message">${this.escapeHtml(output.error)}</div>
                     </div>`;
-            case 'rich':
-                if (output.format === 'html') {
-                    return `<div class="output rich-output">${output.content}</div>`;
-                } else {
-                    return `<div class="output rich-output">${this.escapeHtml(output.content)}</div>`;
-                }
-            default:
-                return '';
+      case "rich":
+        if (output.format === "html") {
+          return `<div class="output rich-output">${output.content}</div>`;
+        } else {
+          return `<div class="output rich-output">${this.escapeHtml(output.content)}</div>`;
         }
+      default:
+        return "";
     }
+  }
 
-    private escapeHtml(unsafe: string): string {
-        return unsafe
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
+  private escapeHtml(unsafe: string): string {
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 }
