@@ -4,16 +4,12 @@
  */
 
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { CellOutput } from './types';
 import * as jmq from './jmq';
 import * as net from 'net';
 import * as crypto from 'crypto';
-import { promisify } from 'util';
 
-const sleep = promisify(setTimeout);
 
 /** Quickly find an ephemeral free port for binding */
 async function getRandomPort(): Promise<number> {
@@ -54,25 +50,24 @@ interface ExecutionItem {
  * Basic shape of a Jupyter connection info JSON
  * (Ports, IP, signature key, transport, etc.)
  */
-interface ConnectionInfo {
-    control_port: number;
-    shell_port: number;
-    stdin_port: number;
-    iopub_port: number;
-    hb_port: number;
-    ip: string;
-    key: string;
-    transport: string; // typically "tcp"
-    signature_scheme: string; // e.g. "hmac-sha256"
-    kernel_name: string;
-}
+// interface ConnectionInfo {
+//     control_port: number;
+//     shell_port: number;
+//     stdin_port: number;
+//     iopub_port: number;
+//     hb_port: number;
+//     ip: string;
+//     key: string;
+//     transport: string; // typically "tcp"
+//     signature_scheme: string; // e.g. "hmac-sha256"
+//     kernel_name: string;
+// }
 
 /**
  * The KernelManager is a drop-in replacement for PythonRunner,
  * but uses jmq.js to talk to a Jupyter kernel via ZeroMQ.
  */
 export class KernelManager {
-    private processes: Map<string, ChildProcessWithoutNullStreams> = new Map();
     private kernelMap = new Map<string, KernelInfo>();
     private executionQueue: Map<string, ExecutionItem[]> = new Map();
     private processing: Map<string, boolean> = new Map();
@@ -100,7 +95,7 @@ export class KernelManager {
         pythonPath: string,
         onDataCallback?: (partialOutput: CellOutput) => void
     ): Promise<void> {
-        if (this.processes.has(docPath)) {
+        if (this.kernelMap.has(docPath)) {
             // Already started
             return;
         }
@@ -215,24 +210,25 @@ export class KernelManager {
                 });
                 child.on('close', (code, signal) => {
                     console.log(
-                        `KernelManager: Jupyter kernel closed (doc=${docPath}), code=${code}, signal=${signal}`
+                        `KernelManager: kernel closed doc=${docPath}, code=${code}, signal=${signal}`
                     );
-                    this.processes.delete(docPath);
                     this.executionQueue.delete(docPath);
                     this.processing.delete(docPath);
+                    this.kernelMap.delete(docPath);
                     this.jmqSockets.delete(docPath);
                 });
 
                 child.on('exit', (code, signal) => {
                     console.log(
-                        `Kernel closed doc=${docPath}, code=${code}, signal=${signal}`
+                        `KernelManager: kernel closed doc=${docPath}, code=${code}, signal=${signal}`
                     );
+                    this.executionQueue.delete(docPath);
+                    this.processing.delete(docPath);
                     this.kernelMap.delete(docPath);
                     this.jmqSockets.delete(docPath);
                 });
 
               // Store references
-              this.processes.set(docPath, child);
               this.executionQueue.set(docPath, []);
               this.processing.set(docPath, false);
       
@@ -408,14 +404,13 @@ export class KernelManager {
      * Dispose of the kernel for a particular docPath
      */
     public disposeRunner(docPath: string): void {
-        const child = this.processes.get(docPath);
+        const child = this.kernelMap.get(docPath)?.process;
         if (child) {
             try {
                 child.kill();
             } catch (err) {
                 console.error('Error killing kernel process:', err);
             }
-            this.processes.delete(docPath);
             this.executionQueue.delete(docPath);
             this.processing.delete(docPath);
             this.kernelMap.delete(docPath);
@@ -434,19 +429,18 @@ export class KernelManager {
      * Dispose all kernels
      */
     public disposeAll(): void {
-        for (const [docPath, child] of this.processes.entries()) {
+        for (const [_, child] of this.kernelMap.entries()) {
             try {
-                child.kill();
+                child.process.kill();
             } catch (err) {
                 console.error('Error killing kernel process:', err);
             }
         }
-        this.processes.clear();
         this.executionQueue.clear();
         this.processing.clear();
         this.kernelMap.clear();
 
-        for (const [docPath, sockets] of this.jmqSockets.entries()) {
+        for (const [_, sockets] of this.jmqSockets.entries()) {
             sockets.shell.close();
             sockets.iopub.close();
             sockets.control.close();
@@ -498,7 +492,7 @@ export class KernelManager {
         code: string,
         onDataCallback?: (partialOutput: CellOutput) => void
     ): Promise<{ outputs: CellOutput[] }> {
-        const child = this.processes.get(docPath);
+        const child = this.kernelMap.get(docPath);
         if (!child) {
             throw new Error(`No kernel for docPath: ${docPath}`);
         }
