@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- [ ] zeromq comm. with IPython kernel
 - [ ] code-result block binding
 - [ ] env info cache
+
+## [0.1.2] - 2025-01-13
+
+- zeromq comm. with IPython kernel
 
 ## [0.1.1] - 2025-01-11
 
