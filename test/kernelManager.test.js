@@ -10,7 +10,7 @@ const { KernelManager } = require('../out/kernelManager'); // Adjust to your act
 const PYTHON_PATH = process.env.PYTHON_TEST_PATH || 'python';
 
 // We'll use a temporary docPath (any file path is OK, so long as it's writable)
-const DOC_PATH = path.join(__dirname, 'temp.ipynb');
+const DOC_PATH = path.join(__dirname, 'temp.md');
 
 describe('KernelManager Integration Tests', function() {
   // Increase timeout if kernel startup can be slow
@@ -77,45 +77,50 @@ print("Hello from Python " + sys.version.split()[0])
   it('should interrupt a long-running command and still allow further execution', async function() {
     this.timeout(20000); // Increase timeout to 20s
 
-    // 1) sleeps for a while
+    // 1) Run a loop that prints strings
     const code = `
 import time
-time.sleep(10)
+i = 0
+while True:
+    print(f"Iteration {i}")
+    time.sleep(0.5)  # Small delay to control output rate
+    i += 1
 `;
-    console.log('Starting infinite loop execution...');
-    const execPromise = km.queueCodeExecution(DOC_PATH, code);
+    console.log('Starting loop execution...');
+    
+    // Store outputs during execution
+    const outputs = [];
+    let terminated = false;
 
-    // 2) Wait a bit, then interrupt
-    console.log('Waiting 1s before interrupting...');
-    await new Promise(res => setTimeout(res, 1000)); // allow it to run a little
-    console.log('Sending interrupt...');
-    await km.terminateExecution(DOC_PATH);
+    const execPromise = km.queueCodeExecution(DOC_PATH, code, (output) => {
+      if (!terminated && output.type === 'text' && output.content.includes('Iteration')) {
+        outputs.push(output.content.trim());
+        if (outputs.length === 3) {
+          terminated = true;
+          km.terminateExecution(DOC_PATH);
+        }
+      }
+    });
 
-    let didThrow = false;
     try {
-      console.log('Waiting for execPromise to resolve/reject...');
       await execPromise;
     } catch (err) {
       console.log('Caught error:', err.message);
-      // We might see an error from KeyboardInterrupt or similar.
-      didThrow = true;
     }
 
-    // We expect the code either to be forcibly interrupted or to produce partial output
-    assert.ok(didThrow, 'Expected an error or forced interrupt from infinite loop');
+    // Check we got exactly 3 iterations
+    assert.equal(outputs.length, 3, 'Expected exactly 3 iterations before interrupt');
+    assert.ok(outputs.every(o => o.startsWith('Iteration')), 'Expected all outputs to be iterations');
 
     // Wait a bit for the kernel to stabilize after interrupt
-    console.log('Waiting 2s for kernel to stabilize...');
-    await new Promise(res => setTimeout(res, 2000));
+    await new Promise(res => setTimeout(res, 1000));
 
-    // 3) Now run a new code cell to verify kernel is still responsive
+    // 3) Verify kernel is still responsive
     console.log('Testing if kernel is still responsive...');
     const result = await km.queueCodeExecution(DOC_PATH, 'print("Still alive?")');
-    const textOutputs = result.outputs.filter(o => o.type === 'text');
-    assert.ok(
-      textOutputs.some(o => o.content.includes('Still alive?')),
-      'Kernel did not respond after interrupt'
-    );
+    const aliveOutputs = result.outputs
+      .filter(o => o.type === 'text' && o.content.includes('Still alive?'));
+    assert.ok(aliveOutputs.length > 0, 'Kernel did not respond after interrupt');
   });
 
   it('should run multiple sequential executions and maintain state', async function() {
