@@ -11,8 +11,14 @@ export interface ILanguageRunner {
     blockId: string,
     onPartialOutput?: (output: CellOutput) => void,
   ): Promise<{ outputs: CellOutput[] }>;
+  // clear global status of runner class
   clearState(docPath: string): void;
   disposeRunner(docPath: string): void;
+  // start a background process for specific doc
+  startProcessForDoc(
+    docPath: string,
+    envPath: string,
+    onDataCallback?: (output: CellOutput) => void): void;
   terminateExecution?(docPath: string): void; // Optional for backward compatibility
 }
 

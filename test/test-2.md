@@ -3,5 +3,7 @@
 ```python
 print("new one")
 print("another one")
+import torch
+x = 200
 print(x)
 ```

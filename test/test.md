@@ -4,6 +4,7 @@
 
 ```python
 print("Hello, World!")
+import torch
 x = 42
 print(f"The value of x is {x}")
 ```

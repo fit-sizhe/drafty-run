@@ -1,0 +1,20 @@
+name: torch
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - pytorch
+  - torchvision
+  - torchaudio
+  - jupyter
+  - matplotlib
+  - pandas
+  - pillow
+  - numpy
+  - ipython
+  - pip
+  - pip:
+    - jupyter_client
+    - zmq
