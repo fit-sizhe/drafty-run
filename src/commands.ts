@@ -158,6 +158,11 @@ export async function startSessionHandler(context: vscode.ExtensionContext) {
   // Otherwise, create a new session for this file
   await envManager.initialize();
 
+  // Wait for environments to be gathered and first environment to be selected
+  while (envManager.getEnvironments().length === 0) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
   // Create a Webview panel for this file
   const filename = path.basename(mdFullPath, ".md");
   const title = `${filename} Results`;
@@ -169,12 +174,21 @@ export async function startSessionHandler(context: vscode.ExtensionContext) {
     title,
   );
 
-  // Tell pythonAdapter to start the process for this doc
-  const pythonPath = envManager.getSelectedPath(mdFullPath);
+  // Get the first environment path
+  const firstEnv = envManager.getEnvironments()[0];
+  const pythonPath = firstEnv.path;
   const pythonAdapter = RunnerRegistry.getInstance().getRunner("python");
+  
   if (pythonAdapter) {
+    // dispose any existing runner (like in changeEnv)
+    pythonAdapter.disposeRunner(mdFullPath);
+    
+    // start the new process with the first environment
     pythonAdapter.startProcessForDoc(mdFullPath, pythonPath);
   }
+  
+  // set the environment path (like in changeEnv)
+  envManager.setSelectedPath(mdFullPath, pythonPath);
 
   // Attempt to load previous state
   const existingState = stateManager.tryLoadPreviousState(mdFullPath);

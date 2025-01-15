@@ -47,23 +47,6 @@ interface ExecutionItem {
 }
 
 /**
- * Basic shape of a Jupyter connection info JSON
- * (Ports, IP, signature key, transport, etc.)
- */
-// interface ConnectionInfo {
-//     control_port: number;
-//     shell_port: number;
-//     stdin_port: number;
-//     iopub_port: number;
-//     hb_port: number;
-//     ip: string;
-//     key: string;
-//     transport: string; // typically "tcp"
-//     signature_scheme: string; // e.g. "hmac-sha256"
-//     kernel_name: string;
-// }
-
-/**
  * The KernelManager is a drop-in replacement for PythonRunner,
  * but uses jmq.js to talk to a Jupyter kernel via ZeroMQ.
  */
@@ -101,9 +84,8 @@ export class KernelManager {
     }
 
     let lastError: unknown = null;
-    let child: ChildProcessWithoutNullStreams;
-
-    const tot_attempts = 20;
+    const tot_attempts = 5;
+    
     for (let attempt = 1; attempt <= tot_attempts; attempt++) {
       try {
         // Allocate ephemeral ports
@@ -116,131 +98,160 @@ export class KernelManager {
         // Generate key & scheme
         const signatureScheme = "hmac-sha256"; // typical for ipykernel
         const key = randomHexKey();
-        // jmp's scheme is just the "sha256" portion (removing the "hmac-")
+        // jmq's scheme is just the "sha256" portion (removing the "hmac-")
         const scheme = signatureScheme.replace("hmac-", "") || "sha256";
 
-        // Spawn the kernel with our chosen ports
-        child = spawn(
-          pythonPath,
-          [
-            "-m",
-            "ipykernel",
-            "--IPKernelApp.transport=tcp",
-            "--IPKernelApp.ip=127.0.0.1",
-            `--IPKernelApp.shell_port=${shellPort}`,
-            `--IPKernelApp.iopub_port=${iopubPort}`,
-            `--IPKernelApp.stdin_port=${stdinPort}`,
-            `--IPKernelApp.control_port=${controlPort}`,
-            `--IPKernelApp.hb_port=${hbPort}`,
-            `--Session.key=${key}`,
-            `--Session.signature_scheme=${signatureScheme}`,
-          ],
-          {
-            cwd: path.dirname(docPath),
-          },
-        );
+        let shellSocket: jmq.Socket | undefined;
+        let iopubSocket: jmq.Socket | undefined;
+        let controlSocket: jmq.Socket | undefined;
+        let child: ChildProcessWithoutNullStreams | undefined;
 
-        // Keep track of whether the kernel closed unexpectedly
-        const exitPromise = new Promise<void>((_, reject) => {
-          child.once("exit", (code, signal) => {
-            if (code !== 0) {
-              reject(
-                new Error(
-                  `Kernel exited before readiness (doc=${docPath}), code=${code}, signal=${signal}`,
-                ),
-              );
+        try {
+          // Spawn the kernel with our chosen ports
+          child = spawn(
+            pythonPath,
+            [
+              "-m",
+              "ipykernel",
+              "--IPKernelApp.transport=tcp",
+              "--IPKernelApp.ip=127.0.0.1",
+              `--IPKernelApp.shell_port=${shellPort}`,
+              `--IPKernelApp.iopub_port=${iopubPort}`,
+              `--IPKernelApp.stdin_port=${stdinPort}`,
+              `--IPKernelApp.control_port=${controlPort}`,
+              `--IPKernelApp.hb_port=${hbPort}`,
+              `--Session.key=${key}`,
+              `--Session.signature_scheme=${signatureScheme}`,
+            ],
+            {
+              cwd: path.dirname(docPath),
+            },
+          );
+
+          // Keep track of whether the kernel closed unexpectedly
+          if (!child) {
+            throw new Error("Kernel process unexpectedly undefined after spawn");
+          }
+          
+          // Create a strongly-typed reference that TypeScript knows won't be undefined
+          const kernel: ChildProcessWithoutNullStreams = child;
+          
+          const exitPromise = new Promise<void>((_, reject) => {
+            kernel.once("exit", (code, signal) => {
+              if (code !== 0) {
+                reject(
+                  new Error(
+                    `Kernel exited before readiness (doc=${docPath}), code=${code}, signal=${signal}`,
+                  ),
+                );
+              }
+            });
+          });
+
+          shellSocket = new jmq.Socket("DEALER", scheme, key);
+          await shellSocket.connect(`tcp://127.0.0.1:${shellPort}`);
+
+          // Increase timeout to 2000ms and add retry delay between attempts
+          await this.waitForKernelInfoReply(shellSocket, exitPromise, 2000);
+
+          // If we get here, we got "kernel_info_reply" => kernel is ready
+          iopubSocket = new jmq.Socket("SUB", scheme, key);
+          (iopubSocket as any).socket.subscribe("");
+          await iopubSocket.connect(`tcp://127.0.0.1:${iopubPort}`);
+
+          controlSocket = new jmq.Socket("DEALER", scheme, key);
+          await controlSocket.connect(`tcp://127.0.0.1:${controlPort}`);
+
+          // At this point child must be defined since we got past the kernel_info_reply
+          if (!child) {
+            throw new Error("Kernel process unexpectedly undefined");
+          }
+
+          // Save kernel + sockets to memory
+          const kInfo: KernelInfo = {
+            process: child,
+            shellPort,
+            iopubPort,
+            stdinPort,
+            controlPort,
+            hbPort,
+            scheme,
+            key,
+          };
+          this.kernelMap.set(docPath, kInfo);
+
+          this.jmqSockets.set(docPath, {
+            shell: shellSocket,
+            iopub: iopubSocket,
+            control: controlSocket,
+          });
+
+          // Listen on child process events/logging
+          child.stdout.on("data", (data: Buffer) => {
+            onDataCallback?.({
+              type: "text",
+              timestamp: Date.now(),
+              content: data.toString(),
+              stream: "stdout",
+            });
+          });
+          child.stderr.on("data", (data: Buffer) => {
+            onDataCallback?.({
+              type: "text",
+              timestamp: Date.now(),
+              content: data.toString(),
+              stream: "stderr",
+            });
+          });
+          child.on("close", (code, signal) => {
+            console.log(
+              `KernelManager: kernel closed doc=${docPath}, code=${code}, signal=${signal}`,
+            );
+            this.executionQueue.delete(docPath);
+            this.processing.delete(docPath);
+            this.kernelMap.delete(docPath);
+            this.jmqSockets.delete(docPath);
+          });
+
+          child.on("exit", (code, signal) => {
+            console.log(
+              `KernelManager: kernel closed doc=${docPath}, code=${code}, signal=${signal}`,
+            );
+            this.executionQueue.delete(docPath);
+            this.processing.delete(docPath);
+            this.kernelMap.delete(docPath);
+            this.jmqSockets.delete(docPath);
+          });
+
+          // Store references
+          this.executionQueue.set(docPath, []);
+          this.processing.set(docPath, false);
+
+          // Stop the for-loop (success)
+          return;
+        } catch (innerErr) {
+          // Clean up sockets on error
+          shellSocket?.close();
+          iopubSocket?.close();
+          controlSocket?.close();
+          
+          // Kill child process if it exists
+          if (child?.pid) {
+            try {
+              process.kill(child.pid);
+            } catch (killErr) {
+              console.error("Error killing kernel process:", killErr);
             }
-          });
-        });
+          }
+          child = undefined;
+          
+          throw innerErr;
+        }
 
-        const shellSocket = new jmq.Socket("DEALER", scheme, key);
-        await shellSocket.connect(`tcp://127.0.0.1:${shellPort}`);
-
-        await this.waitForKernelInfoReply(shellSocket, exitPromise, 500);
-
-        // If we get here, we got "kernel_info_reply" => kernel is ready
-        const iopubSocket = new jmq.Socket("SUB", scheme, key);
-        (iopubSocket as any).socket.subscribe("");
-        await iopubSocket.connect(`tcp://127.0.0.1:${iopubPort}`);
-
-        const controlSocket = new jmq.Socket("DEALER", scheme, key);
-        await controlSocket.connect(`tcp://127.0.0.1:${controlPort}`);
-
-        // Save kernel + sockets to memory
-        const kInfo: KernelInfo = {
-          process: child,
-          shellPort,
-          iopubPort,
-          stdinPort,
-          controlPort,
-          hbPort,
-          scheme,
-          key,
-        };
-        this.kernelMap.set(docPath, kInfo);
-
-        this.jmqSockets.set(docPath, {
-          shell: shellSocket,
-          iopub: iopubSocket,
-          control: controlSocket,
-        });
-
-        this.kernelMap.set(docPath, {
-          process: child,
-          shellPort,
-          iopubPort,
-          stdinPort,
-          controlPort,
-          hbPort,
-          scheme,
-          key,
-        });
-
-        // Listen on child process events/logging
-        child.stdout.on("data", (data: Buffer) => {
-          onDataCallback?.({
-            type: "text",
-            timestamp: Date.now(),
-            content: data.toString(),
-            stream: "stdout",
-          });
-        });
-        child.stderr.on("data", (data: Buffer) => {
-          onDataCallback?.({
-            type: "text",
-            timestamp: Date.now(),
-            content: data.toString(),
-            stream: "stderr",
-          });
-        });
-        child.on("close", (code, signal) => {
-          console.log(
-            `KernelManager: kernel closed doc=${docPath}, code=${code}, signal=${signal}`,
-          );
-          this.executionQueue.delete(docPath);
-          this.processing.delete(docPath);
-          this.kernelMap.delete(docPath);
-          this.jmqSockets.delete(docPath);
-        });
-
-        child.on("exit", (code, signal) => {
-          console.log(
-            `KernelManager: kernel closed doc=${docPath}, code=${code}, signal=${signal}`,
-          );
-          this.executionQueue.delete(docPath);
-          this.processing.delete(docPath);
-          this.kernelMap.delete(docPath);
-          this.jmqSockets.delete(docPath);
-        });
-
-        // Store references
-        this.executionQueue.set(docPath, []);
-        this.processing.set(docPath, false);
-
-        // Stop the for-loop (success)
-        return;
       } catch (err) {
         lastError = err;
+        // Add delay between attempts
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
