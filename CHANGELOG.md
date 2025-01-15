@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 ## [0.1.3] - 2025-01-14
 
 - python env info cache
+- add zeromq binaries in pkg (0.1.2 is not deprecated)
 
 ## [0.1.2] - 2025-01-13
 
