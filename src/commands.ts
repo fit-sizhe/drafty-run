@@ -59,7 +59,7 @@ function updatePanel(docPath: string) {
     docPath,
     session.codeBlocks,
     envManager.getEnvironments(),
-    envManager.getSelectedPath(),
+    envManager.getSelectedPath(docPath),
   );
 }
 
@@ -71,6 +71,7 @@ async function handleWebviewMessage(
   const envManager = EnvironmentManager.getInstance();
   const webviewManager = WebviewManager.getInstance();
   const stateManager = StateManager.getInstance();
+  const pythonManager = RunnerRegistry.getInstance().getRunner("python");
 
   const docPath = webviewManager.getDocPathForPanel(panel);
   if (!docPath) {
@@ -82,7 +83,16 @@ async function handleWebviewMessage(
 
   switch (message.command) {
     case "changeEnv":
-      envManager.setSelectedPath(message.pythonPath);
+      if (pythonManager) {
+        // kill original runner
+        pythonManager.disposeRunner(docPath);
+        // start a new process for this doc
+        pythonManager.startProcessForDoc(
+          docPath,
+          message.pythonPath,
+        );
+      }
+      envManager.setSelectedPath(docPath, message.pythonPath);
       vscode.window.showInformationMessage(
         `Switched to: ${message.pythonPath}`,
       );
@@ -160,10 +170,10 @@ export async function startSessionHandler(context: vscode.ExtensionContext) {
   );
 
   // Tell pythonAdapter to start the process for this doc
-  const pythonPath = envManager.getSelectedPath();
+  const pythonPath = envManager.getSelectedPath(mdFullPath);
   const pythonAdapter = RunnerRegistry.getInstance().getRunner("python");
-  if (pythonAdapter && "startProcessForDoc" in pythonAdapter) {
-    (pythonAdapter as any).startProcessForDoc(mdFullPath, pythonPath);
+  if (pythonAdapter) {
+    pythonAdapter.startProcessForDoc(mdFullPath, pythonPath);
   }
 
   // Attempt to load previous state
@@ -356,7 +366,7 @@ async function runSingleCodeBlock(
     await runner.executeCode(
       docPath,
       code,
-      envManager.getSelectedPath(),
+      envManager.getSelectedPath(docPath),
       blockId,
       onPartialOutput,
     );

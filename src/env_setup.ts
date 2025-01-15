@@ -16,8 +16,8 @@ export function truncatePath(
   if (segments.length > maxSegments) {
     // Number of segments to remove
     const removeCount = segments.length - maxSegments;
-    // Replace all removed segments with 'parent-folder'
-    segments.splice(0, removeCount, "parent-folder");
+    // Replace all removed segments with '$PARENT'
+    segments.splice(0, removeCount, "$PARANT");
   }
 
   // Re-join with the platform-specific separator
@@ -32,7 +32,9 @@ export interface Environment {
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
   private environments: Environment[] = [];
-  private selectedPath: string = "python3";
+  private selectedPath: string = "";
+  // docPath -- binary pairs
+  private docBins: Map<string, string> = new Map();
 
   private constructor() {}
 
@@ -44,9 +46,16 @@ export class EnvironmentManager {
   }
 
   async initialize(): Promise<void> {
-    this.environments = await this.gatherEnvironments();
+    // Gather environments if not already done
+    if (this.environments.length === 0) {
+      this.environments = await this.gatherEnvironments();
+    }
+
     if (this.environments.length > 0) {
-      this.selectedPath = this.environments[0].path;
+      // Validate and update global selectedPath
+      if (!this.selectedPath) {
+        this.selectedPath = this.environments[0].path;
+      }
     }
   }
 
@@ -54,18 +63,25 @@ export class EnvironmentManager {
     return this.environments;
   }
 
-  getSelectedPath(): string {
+  getSelectedPath(docPath?: string): string {
+    if (docPath) {
+      let binPath = this.docBins.get(docPath);
+      if (binPath) return binPath;
+    }
     return this.selectedPath;
   }
 
-  setSelectedPath(path: string): void {
-    this.selectedPath = path;
+  setSelectedPath(path: string, docPath?: string): void {
+    this.selectedPath = path
+    if (docPath) {
+      this.docBins.set(docPath, path);
+    }
   }
 
   private async gatherEnvironments(): Promise<Environment[]> {
     const results: Environment[] = [];
 
-    vscode.window.setStatusBarMessage("Looking for Python Envs", 2000);
+    vscode.window.setStatusBarMessage("Drafty: Looking for Python Envs", 2000);
     const condaEnvs = await this.listCondaEnvs();
     results.push(...condaEnvs);
 
@@ -74,7 +90,7 @@ export class EnvironmentManager {
 
     const systemPythons = await this.listSystemPythons();
     results.push(...systemPythons);
-    vscode.window.setStatusBarMessage("Done with Env Search", 3000);
+    vscode.window.setStatusBarMessage("Drafty: Done with Env Search", 3000);
     // If none found, fallback to "python3" or "python.exe" on Windows
     if (results.length === 0) {
       if (process.platform === "win32") {
@@ -107,8 +123,9 @@ export class EnvironmentManager {
     return new Promise((resolve) => {
       const isWindows = process.platform === "win32";
       const results: Environment[] = [];
-
-      const cmd = isWindows ? "where python" : "which -a python3 python"; // On Unix, this tries both python3 and python
+      
+      // On Unix, tries both python3 and python
+      const cmd = isWindows ? "where python" : "which -a python3 python"; 
 
       exec(cmd, (error, stdout) => {
         if (!error) {

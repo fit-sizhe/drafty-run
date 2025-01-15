@@ -7,3 +7,6 @@ import torch
 x = 200
 print(x)
 ```
+```python
+dir(torch)
+```

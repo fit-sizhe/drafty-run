@@ -103,7 +103,8 @@ export class KernelManager {
     let lastError: unknown = null;
     let child: ChildProcessWithoutNullStreams;
 
-    for (let attempt = 1; attempt <= 5; attempt++) {
+    const tot_attempts = 20;
+    for (let attempt = 1; attempt <= tot_attempts; attempt++) {
       try {
         // Allocate ephemeral ports
         const shellPort = await getRandomPort();
@@ -155,7 +156,7 @@ export class KernelManager {
         const shellSocket = new jmq.Socket("DEALER", scheme, key);
         await shellSocket.connect(`tcp://127.0.0.1:${shellPort}`);
 
-        await this.waitForKernelInfoReply(shellSocket, exitPromise, 5000);
+        await this.waitForKernelInfoReply(shellSocket, exitPromise, 500);
 
         // If we get here, we got "kernel_info_reply" => kernel is ready
         const iopubSocket = new jmq.Socket("SUB", scheme, key);
@@ -184,8 +185,6 @@ export class KernelManager {
           control: controlSocket,
         });
 
-        // If we reach here, we got a valid "kernel_info_reply" and the kernel
-        // hasn't exited. Let's store it and break out of the retry loop.
         this.kernelMap.set(docPath, {
           process: child,
           shellPort,
@@ -247,7 +246,7 @@ export class KernelManager {
 
     // If we tried all attempts and still failed, rethrow
     throw new Error(
-      `Failed to start kernel (doc=${docPath}) after 5 attempts. Last error: ` +
+      `Failed to start kernel (doc=${docPath}) after ${tot_attempts} attempts. Last error: ` +
         (lastError instanceof Error ? lastError.message : String(lastError)),
     );
   }

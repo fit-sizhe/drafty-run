@@ -139,7 +139,6 @@ export class WebviewManager {
     this.panels.clear();
   }
 
-  // The rest of your existing getWebviewContent(...) logic:
   private getWebviewContent(
     blocks: Map<string, CodeBlockExecution>,
     environments: Environment[],
