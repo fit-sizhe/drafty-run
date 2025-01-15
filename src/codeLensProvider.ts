@@ -18,7 +18,7 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
 
         // 1) Run code block
         const runCmd: vscode.Command = {
-          title: "▶ Run Code Block",
+          title: "▶ Run",
           command: "drafty.runBlock",
           arguments: [range],
         };
@@ -26,13 +26,30 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
 
         // 2) Terminate code block
         const termCmd: vscode.Command = {
-          title: "✖ Terminate Execution",
+          title: "✖ Terminate",
           command: "drafty.terminateBlock",
           arguments: [range],
         };
         codeLenses.push(new vscode.CodeLens(range, termCmd));
+
+        // 3) Add Bind codelens
+        const bindCmd: vscode.Command = {
+          title: "🔗 Bind",
+          command: "drafty.bindBlock",
+          arguments: [range],
+        };
+        codeLenses.push(new vscode.CodeLens(range, bindCmd));
       }
     }
+
+    // Add Bind All codelens at the top of document
+    const bindAllCmd: vscode.Command = {
+      title: "🔗 Bind All",
+      command: "drafty.bindAllBlocks",
+      arguments: [],
+    };
+    codeLenses.push(new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), bindAllCmd));
+
     return codeLenses;
   }
 }

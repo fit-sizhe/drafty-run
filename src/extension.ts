@@ -8,6 +8,8 @@ import {
   startSessionHandler,
   runBlockHandler,
   terminateBlockHandler,
+  bindBlockHandler,
+  bindAllBlocksHandler
 } from "./commands";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -27,8 +29,19 @@ export function activate(context: vscode.ExtensionContext) {
     (range: vscode.Range) => terminateBlockHandler(context, range),
   );
 
+  // Register new commands
+  const bindBlockCmd = vscode.commands.registerCommand(
+    "drafty.bindBlock",
+    (range: vscode.Range) => bindBlockHandler(context, range)
+  );
+  const bindAllBlocksCmd = vscode.commands.registerCommand(
+    "drafty.bindAllBlocks",
+    () => bindAllBlocksHandler(context)
+  );
+
   // Register commands and CodeLens provider
   context.subscriptions.push(startSessionCmd, runBlockCmd, terminateBlockCmd);
+  context.subscriptions.push(bindBlockCmd, bindAllBlocksCmd);
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       "markdown",

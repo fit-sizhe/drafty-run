@@ -31,6 +31,11 @@ function getDocPath(editor: vscode.TextEditor | undefined): string | undefined {
   return editor.document.uri.fsPath;
 }
 
+export function generateBindingId(): string {
+  const randomStr = Math.random().toString(36)
+  return 'DRAFTY-ID-' + randomStr.slice(5, 8) + '-0';
+}
+
 // A callback for when the user closes the results panel
 export function panelDisposedCallback(docPath: string) {
   console.log(`Panel for docPath: ${docPath} disposed.`);
@@ -444,6 +449,93 @@ export async function terminateBlockHandler(
       "Python runner does not support interruption",
     );
   }
+}
+
+// TODO: Add binding ID to code block without use of "blockId"
+export async function bindBlockHandler(
+  context: vscode.ExtensionContext,
+  range: vscode.Range,
+) {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return;
+
+  const docPath = getDocPath(editor);
+  if (!docPath) {
+    vscode.window.showErrorMessage("Please open a Markdown file first.");
+    return;
+  }
+
+  // Generate new binding ID
+  const bindingId = generateBindingId();
+
+  // Add binding ID comment to code block
+  const edit = new vscode.WorkspaceEdit();
+  const position = new vscode.Position(range.start.line + 1, 0);
+  edit.insert(editor.document.uri, position, `#| ${bindingId}\n`);
+  await vscode.workspace.applyEdit(edit);
+
+  // Update result panel block
+  const stateManager = StateManager.getInstance();
+  const session = stateManager.getSession(docPath);
+  if (session) {
+    const blockId = `block-${range.start.line}`;
+    const block = session.codeBlocks.get(blockId);
+    if (block) {
+      block.bindingId = bindingId;
+      WebviewManager.getInstance().updateContent(
+        docPath,
+        session.codeBlocks,
+        EnvironmentManager.getInstance().getEnvironments(),
+        EnvironmentManager.getInstance().getSelectedPath(docPath)
+      );
+    }
+  }
+}
+
+// TODO: Bind all code blocks sequentially without use of blockId
+export async function bindAllBlocksHandler(context: vscode.ExtensionContext) {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return;
+
+  const docPath = getDocPath(editor);
+  if (!docPath) {
+    vscode.window.showErrorMessage("Please open a Markdown file first.");
+    return;
+  }
+
+  const stateManager = StateManager.getInstance();
+  const session = stateManager.getSession(docPath);
+  if (!session) return;
+
+  // Get all code blocks in order
+  const text = editor.document.getText();
+  const tokens = parseMarkdownContent(text);
+  const blocks = extractCodeBlocks(tokens);
+
+  // Create edit to add binding IDs
+  const edit = new vscode.WorkspaceEdit();
+  for (const block of blocks) {
+    const bindingId = generateBindingId();
+    const position = new vscode.Position(block.position + 1, 0);
+    edit.insert(editor.document.uri, position, `#| ${bindingId}\n`);
+
+    // Update result panel block
+    const blockId = `block-${block.position}`;
+    const execBlock = session.codeBlocks.get(blockId);
+    if (execBlock) {
+      execBlock.bindingId = bindingId;
+    }
+  }
+
+  await vscode.workspace.applyEdit(edit);
+
+  // Update result panel
+  WebviewManager.getInstance().updateContent(
+    docPath,
+    session.codeBlocks,
+    EnvironmentManager.getInstance().getEnvironments(),
+    EnvironmentManager.getInstance().getSelectedPath(docPath)
+  );
 }
 
 async function handleLoadResults(docPath: string, panel: vscode.WebviewPanel) {

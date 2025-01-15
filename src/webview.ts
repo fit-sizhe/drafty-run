@@ -169,7 +169,8 @@ export class WebviewManager {
           ? `Output [${block.metadata.runNumber}]`
           : "Output [?]";
 
-        const blockContainerId = `result-block-${"block-" + block.position}`;
+        const blockContainerId = `${block.bindingId ||"block-" + block.position}`;
+        const blockTitle = runLabel + ` ${block.bindingId || ""}`
         const outputsHtml = block.outputs
           .map((output) => this.createOutputHtml(output))
           .join("\n");
@@ -179,7 +180,7 @@ export class WebviewManager {
                          id="${blockContainerId}"
                          style="max-height: ${maxResultHeight}px; overflow-y: auto;">
                         <div class="block-header">
-                            <span class="status">${runLabel}</span>
+                            <span class="status">${blockTitle}</span>
                             <span class="time">${executionTime}</span>
                         </div>
                         <div class="block-outputs">

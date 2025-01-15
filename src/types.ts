@@ -37,6 +37,7 @@ export interface CodeBlock {
   content: string;
   info: string;
   position: number; // Line number in document where block starts
+  bindingId?: string; // Optional binding ID (DRAFTY-ID-XXXX)
 }
 
 export interface ExecutionState {
@@ -56,4 +57,5 @@ export interface ExecutionMetadata {
 export interface CodeBlockExecution extends CodeBlock {
   metadata: ExecutionMetadata;
   outputs: CellOutput[];
+  bindingId?: string;
 }

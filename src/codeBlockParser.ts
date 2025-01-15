@@ -2,15 +2,22 @@ import * as vscode from "vscode";
 import markdownit from "markdown-it";
 import { CodeBlock } from "./types";
 
+export function extractBindingId(content: string): string | undefined {
+  const match = content.match(/DRAFTY-ID-(\w{3})-(\w{1})/);
+  return match ? match[0] : undefined;
+}
+
 export function extractCodeBlocks(tokens: any[]): CodeBlock[] {
   const blocks: CodeBlock[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.type === "fence" && token.map) {
+      const bindingId = extractBindingId(token.content);
       blocks.push({
         content: token.content,
         info: token.info.trim(),
         position: token.map[0],
+        bindingId
       });
     }
   }
