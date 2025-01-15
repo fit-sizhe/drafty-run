@@ -12,10 +12,10 @@
    ```markdown
    # My First Drafty Document
    
-   \`\`\`python
+   ```python
    x = 42
    print(f"The answer is {x}")
-   \`\`\`
+   ```
    ```
 
 3. **Start a Session**
@@ -36,32 +36,50 @@
 
 ## Key Features
 
-1. **Run Code Blocks in Markdown**  
-   - Adds CodeLens actions (“Run Code Block” / “Terminate Execution”) for code fences (```python ...```).
-   - Each Markdown file has its own “session,” so variables defined in file1.md *don’t* interfere with file2.md.
+1. **Jupyter-like Code Execution**
+   - Full Jupyter kernel integration for Python code execution
+   - Real-time output streaming for text, images, and rich HTML content
+   - Support for matplotlib plots with automatic display
+   - Interrupt long-running code execution with terminate button
+   - Maintains session state between code block runs
 
-2. **Result Panel**  
-   - Displays text outputs, images (e.g. plots), and errors in a dedicated Webview Panel.  
-   - Panels are **per-file**; each `.md` gets its own “Results” panel.
+2. **Rich Output Display**
+   - Real-time streaming of stdout/stderr text output
+   - Automatic display of matplotlib plots and figures
+   - Support for rich HTML output
+   - Error display with traceback information
+   - Collapsible output blocks with execution timing
 
-3. **Save / Load Results**  
-   - **Load Results**: Picks a `.json` file and loads its previously-saved results.  
-   - **Save As**: Lets you choose a folder/file name to save your session outputs as `.json`.  
-   - **Save**: Automatically saves using a default path or last-used folder. 
-   - Optional **saving rules** (e.g., “latest-only”) let you automatically remove old JSON files for that doc.
+3. **Multiple Environment Support**
+   - Automatic detection of Python environments (conda, venv, system)
+   - Easy switching between environments in the results panel
+   - Support for both global and per-document environment selection
+   - Remembers environment choice per document
 
-4. **Multienvironment Support**  
-   - Choose which Python interpreter (Conda env, venv, etc.) to run with.  
-   - Each environment is discovered at startup; you can switch quickly in the result panel.
+4. **Session Management**
+   - Each Markdown file has its own isolated execution session
+   - Variables and state persist between code block runs
+   - Clear session state with one click
+   - Session state is preserved when saving/loading results
 
-5. **Per-Document Default Paths**  
-   - Drafty remembers the folder used by each document’s last load / save.  
-   - Pressing “Save” uses that same folder next time, making iterative saving more convenient.
+5. **Save/Load Functionality**
+   - Save execution results as JSON files
+   - Load previous results to restore session state
+   - Automatic naming with timestamps
+   - Optional "latest-only" mode to manage storage
+   - Remember last used save location per document
+
+6. **User Interface**
+   - CodeLens actions for running/terminating code blocks
+   - Dedicated results panel with environment selector
+   - Adjustable output height
+   - Real-time execution status indicators
+   - Clean, VS Code-native styling
 
 ## Result Display Logic
 
 - **Streaming outputs**: As code runs, partial outputs (text, images) appear in real time in the panel.  
-- **Block grouping**: Each code block’s output is grouped and collapsible.  
+- **Block grouping**: Each code block's output is grouped and collapsible.  
 - **Images**: If your code (e.g. Python `matplotlib`) produces a figure, Drafty captures it as a base64 image and displays it inline.  
 - **Errors**: Python exceptions (and optional tracebacks) appear in red text.
 
@@ -69,13 +87,13 @@ When you click **Run Code Block**, the extension will:
 1. Create (or reveal) a Webview Panel for that `.md`.
 2. Execute the code in a separate process (e.g., Python shell).
 3. Capture partial outputs (stdout/stderr text, images, etc.) and stream them to the panel.
-4. Update the session’s internal state (so variables persist across consecutive runs in the same file).
+4. Update the session's internal state (so variables persist across consecutive runs in the same file).
 
 ## Adding a New Code Runner
 
 Drafty supports multiple languages by using the `ILanguageRunner` interface. To add a new language runner:
 
-1. **Create a class** that implements `ILanguageRunner`. For example, a “NodeJSRunnerAdapter” might look like:
+1. **Create a class** that implements `ILanguageRunner`. For example, a "NodeJSRunnerAdapter" might look like:
 
    ```ts
    // nodeRunner.ts
@@ -110,7 +128,7 @@ Drafty supports multiple languages by using the `ILanguageRunner` interface. To 
    }
    ```
 
-2. **Register it** in your extension’s global map:
+2. **Register it** in your extension's global map:
 
    ```ts
    // extension.ts
@@ -123,7 +141,7 @@ Drafty supports multiple languages by using the `ILanguageRunner` interface. To 
 
 3. **Fence Info**: If your Markdown code fence says \`\`\`javascript, Drafty will look up `languageRunners.get("javascript")`.  
 4. **Implementation details**:  
-   - `executeCode(docPath, code, envPath, blockId, onPartialOutput)` should launch and manage the language’s process or REPL.  
+   - `executeCode(docPath, code, envPath, blockId, onPartialOutput)` should launch and manage the language's process or REPL.  
    - Return an object with `{ process, promise }`, where `process` is the underlying process handle for terminating, and `promise` resolves when execution finishes with final outputs.  
    - `clearState(docPath)` resets any in-memory or persistent state for that doc.  
-   - `disposeRunner(docPath)` fully removes that doc’s runner instance if you’re storing it in a map.
+   - `disposeRunner(docPath)` fully removes that doc's runner instance if you're storing it in a map.
