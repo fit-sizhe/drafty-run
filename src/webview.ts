@@ -312,6 +312,7 @@ export class WebviewManager {
     <div class="panel-row">
         <label for="envSelect"><strong>Python:</strong></label>
         <select id="envSelect">${optionsHtml}</select>
+        <button id="refreshButton" class="vscode-button" style="max-width: 200px; margin-left: 0.5em;" >Refresh</button>
     </div>
     <div class="panel-row">
         <label for="maxHeightInput"><strong>Max result height(px):</strong></label>
@@ -367,6 +368,14 @@ export class WebviewManager {
         clearButton?.addEventListener('click', () => {
             vscode.postMessage({
                 command: 'clearState'
+            });
+        });
+
+        // "Refresh Env" button
+        const refreshButton = document.getElementById('refreshButton');
+        refreshButton?.addEventListener('click', () => {
+            vscode.postMessage({
+                command: 'refreshEnv'
             });
         });
 

@@ -59,6 +59,26 @@ export class EnvironmentManager {
     }
   }
 
+  async refresh(docPath?: string): Promise<void> {
+    this.environments = await this.gatherEnvironments();
+    if (this.environments.length > 0) {
+      
+      const binPaths = this.environments.map((env)=>env.path);
+      // reset selectedPath
+      if (!binPaths.includes(this.selectedPath)) {
+        this.selectedPath = binPaths[0];
+      }
+      // if binary for current doc no longer exists, 
+      // set it to the first found path
+      if (docPath) {
+        const curBin = this.getSelectedPath(docPath);
+        if (!binPaths.includes(curBin)) {
+          this.setSelectedPath(binPaths[0], docPath);
+        }
+      }
+    }
+  }
+
   getEnvironments(): Environment[] {
     return this.environments;
   }

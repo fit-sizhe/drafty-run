@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- [ ] make sure "Run" code does not update result panel top
-- [ ] code-result block binding
+- [ ] replace `blockId` with `bindingId`
   - bindingId format: 
     - DRAFTY-ID-XXX-Y, i.e. "DRAFTY-ID" + unique 3-digit number + 1 digit number. 
     - the three parts are called head, belly, and tail
+- [ ] code-result block binding
   - "Bind" codelens 
     - adds a comment beneath code fence of a format DRAFTY-ID-XXX-0 if NO ID presents
     - generate new ID only when "bindingID" does not exist in the type of `CodeBlock`
@@ -22,6 +22,11 @@ All notable changes to this project will be documented in this file.
   - "Bind All" codelens binds all code blocks to result block elements in the result panel
     - create new result blocks by following the rule above
     - User might accidentally delete the comment line that has DRAFTY-ID in it. If so, "Bind All" should check if each codeblock has bindingId and makes it re-appear
+
+## [0.1.4] - 2025-01-15
+
+- make env switch consistent btw runs
+- add `Refresh` button to refresh python env the system has
 
 ## [0.1.3] - 2025-01-14
 

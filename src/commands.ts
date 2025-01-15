@@ -98,6 +98,29 @@ async function handleWebviewMessage(
       );
       break;
 
+    case "refreshEnv":
+      const curBin = envManager.getSelectedPath(docPath);
+      vscode.window.showInformationMessage(`Refreshing Environments...`);
+      await envManager.refresh(docPath);
+      updatePanel(docPath);
+      const newBin = envManager.getSelectedPath(docPath);
+      // restart process if old binary no longer exist
+      if (curBin!==newBin && pythonManager){
+        pythonManager.disposeRunner(docPath);
+        pythonManager.startProcessForDoc(
+          docPath,
+          newBin,
+        );
+        envManager.setSelectedPath(newBin, docPath);
+        vscode.window.showInformationMessage(
+          `Switched to: ${newBin}`,
+        );
+      } else {
+        vscode.window.showInformationMessage(
+          `Done Env Refresh`);
+      }
+      break;
+
     case "changeMaxHeight":
       webviewManager.setMaxResultHeight(docPath, message.value);
       updatePanel(docPath);

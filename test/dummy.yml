@@ -1,0 +1,8 @@
+name: dummy
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - jupyter
+  - ipython
+  - pip
