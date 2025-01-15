@@ -92,7 +92,7 @@ async function handleWebviewMessage(
           message.pythonPath,
         );
       }
-      envManager.setSelectedPath(docPath, message.pythonPath);
+      envManager.setSelectedPath(message.pythonPath, docPath);
       vscode.window.showInformationMessage(
         `Switched to: ${message.pythonPath}`,
       );
@@ -188,7 +188,7 @@ export async function startSessionHandler(context: vscode.ExtensionContext) {
   }
   
   // set the environment path (like in changeEnv)
-  envManager.setSelectedPath(mdFullPath, pythonPath);
+  envManager.setSelectedPath(pythonPath, mdFullPath);
 
   // Attempt to load previous state
   const existingState = stateManager.tryLoadPreviousState(mdFullPath);
