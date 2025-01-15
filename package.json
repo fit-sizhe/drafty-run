@@ -52,14 +52,6 @@
       {
         "command": "drafty.terminateBlock",
         "title": "drafty: Terminate Block"
-      },
-      {
-        "command": "drafty.bindBlock",
-        "title": "Drafty: Bind Code Block"
-      },
-      {
-        "command": "drafty.bindAllBlocks",
-        "title": "Drafty: Bind All Code Blocks"
       }
     ]
   },
