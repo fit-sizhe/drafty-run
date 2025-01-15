@@ -18,7 +18,7 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
 
         // 1) Run code block
         const runCmd: vscode.Command = {
-          title: "▶ Run Code Block",
+          title: "▶ Run",
           command: "drafty.runBlock",
           arguments: [range],
         };
@@ -26,7 +26,7 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
 
         // 2) Terminate code block
         const termCmd: vscode.Command = {
-          title: "✖ Terminate Execution",
+          title: "✖ Terminate",
           command: "drafty.terminateBlock",
           arguments: [range],
         };

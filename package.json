@@ -47,11 +47,11 @@
       },
       {
         "command": "drafty.runBlock'",
-        "title": "drafty: Run Code Block"
+        "title": "drafty: Run"
       },
       {
         "command": "drafty.terminateBlock",
-        "title": "drafty: Terminate Block"
+        "title": "drafty: Terminate"
       }
     ]
   },
