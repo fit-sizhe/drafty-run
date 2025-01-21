@@ -4,12 +4,7 @@ import { EnvironmentManager } from "./env_setup";
 import { StateManager } from "./state_io";
 import { RunnerRegistry } from "./runnerRegistry";
 import { MarkdownCodeLensProvider } from "./codeLensProvider";
-import {
-  startSessionHandler,
-  runBlockHandler,
-  terminateBlockHandler,
-  bindBlockHandler
-} from "./commands";
+import { commands } from "./commands";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Drafty is now active");
@@ -17,19 +12,19 @@ export function activate(context: vscode.ExtensionContext) {
   // Register commands
   const startSessionCmd = vscode.commands.registerCommand(
     "drafty.startSession",
-    () => startSessionHandler(context),
+    () => commands.startSessionHandler(context),
   );
   const runBlockCmd = vscode.commands.registerCommand(
     "drafty.runBlock",
-    (range: vscode.Range) => runBlockHandler(context, range),
+    (range: vscode.Range) => commands.runBlockHandler(context, range),
   );
   const terminateBlockCmd = vscode.commands.registerCommand(
     "drafty.terminateBlock",
-    (range: vscode.Range) => terminateBlockHandler(context, range),
+    (range: vscode.Range) => commands.terminateBlockHandler(context, range),
   );
   const bindBlockCmd = vscode.commands.registerCommand(
     "drafty.bindBlock",
-    (range: vscode.Range) => bindBlockHandler(context, range),
+    (range: vscode.Range) => commands.bindBlockHandler(context, range),
   );
 
 
