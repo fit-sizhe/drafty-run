@@ -50,6 +50,7 @@ export interface ExecutionMetadata {
   executionTime?: number;
   status: "pending" | "running" | "success" | "error";
   timestamp: number;
+  bindingId?: string;
   runNumber?: number;
 }
 

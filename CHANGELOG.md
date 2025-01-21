@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- [ ] replace `blockId` with `bindingId`
+- [x] replace `blockId` with `bindingId`
   - bindingId format: 
     - DRAFTY-ID-XXX-Y, i.e. "DRAFTY-ID" + unique 3-digit number + 1 digit number. 
     - the three parts are called head, belly, and tail

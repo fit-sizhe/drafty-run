@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { CodeBlockExecution, CellOutput } from "./types";
 import { Environment } from "./env_setup";
+import { parseDraftyId } from "./binding_utils";
 
 interface PanelInfo {
   panel: vscode.WebviewPanel;
@@ -153,10 +154,31 @@ export class WebviewManager {
       })
       .join("");
 
-    // We only want to display blocks that have actually run or are running
     const renderedBlocks = Array.from(blocks.values())
+      // CONFIG: comment the line below to show all pending blocks
       .filter((b) => b.metadata.status !== "pending")
-      .sort((a, b) => a.position - b.position);
+      .sort((a, b) => {
+        // parse IDs
+        const aId = parseDraftyId(a.metadata?.bindingId || "");
+        const bId = parseDraftyId(b.metadata?.bindingId || "");
+
+        // If both parse, compare (head, belly, tail)
+        if (aId && bId) {
+          // compare belly
+          if (aId.belly !== bId.belly) {
+            return (a.position ?? 0) - (b.position ?? 0);
+          }
+          // compare tail
+          return aId.tail - bId.tail;
+        } else if (aId && !bId) {
+          // a has ID, b does not -> put b after a
+          return -1;
+        } else if (!aId && bId) {
+          return 1;
+        }
+        // if neither has an ID, fallback to position
+        return (a.position ?? 0) - (b.position ?? 0);
+      });
 
     // Build each block's HTML
     const outputHtml = renderedBlocks
@@ -169,7 +191,12 @@ export class WebviewManager {
           ? `Output [${block.metadata.runNumber}]`
           : "Output [?]";
 
-        const blockContainerId = `result-block-${"block-" + block.position}`;
+        // If we have a valid bindingId, prefer that, else fallback to old "block-position"
+        const containerKey = parseDraftyId(block.metadata?.bindingId ?? "")
+          ? block.metadata.bindingId
+          : "block-" + block.position;
+
+        const blockContainerId = `result-block-${containerKey}`;
         const outputsHtml = block.outputs
           .map((output) => this.createOutputHtml(output))
           .join("\n");
@@ -180,6 +207,7 @@ export class WebviewManager {
                          style="max-height: ${maxResultHeight}px; overflow-y: auto;">
                         <div class="block-header">
                             <span class="status">${runLabel}</span>
+                            <span class="time">${containerKey}</span>
                             <span class="time">${executionTime}</span>
                         </div>
                         <div class="block-outputs">

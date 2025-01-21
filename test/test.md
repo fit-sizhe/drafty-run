@@ -1,59 +1,39 @@
 # Python Code Runner Test
 
-## Basic Output Test
-
-```python
-print("Hello, World!")
-import torch
-x = 42
-print(f"The value of x is {x}")
-```
 
 ## Basic Path Test
 
 ```python
+#| DRAFTY-ID-068-0
 from PIL import Image
 im = Image.open("../assets/icon.png")
 print(im.format, im.size, im.mode)
 ```
 
-## Matplotlib Visualization Test
+## Basic Output Test
+
 ```python
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Create some sample data
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-
-# Create a plot
-plt.figure(figsize=(12, 10))
-plt.plot(x, y, 'b-', label='sin(x)')
-plt.title('Sine Wave')
-plt.xlabel('x')
-plt.ylabel('sin(x)')
-plt.grid(True)
-plt.legend()
+#| DRAFTY-ID-145-2
+print("Hello, World!")
+import torch
+x = 46
+print(f"The value of x is {x}")
 ```
 
 ## State Persistence Test
 ```python
+#| DRAFTY-ID-398-1
 # x should still be 42 from the first code block
 print(f"x is still {x}")
-
+import numpy as np
 # Create a new variable
 y = np.array([1, 2, 3])
 print(f"y is {y}")
 ```
 
-## Error Handling Test
-```python
-# This should raise a ZeroDivisionError
-1/0
-```
-
 ## Stream Output Test
 ```python
+#| DRAFTY-ID-864-0
 import time
 
 # This should show output gradually
@@ -65,32 +45,16 @@ for i in range(5):
 print('\nAll processing complete!')
 ```
 
-## Rich Output Test
+## Error Handling Test
 ```python
-import pandas as pd
-import numpy as np
-import time
-# Create a sample DataFrame
-df = pd.DataFrame({
-    'A': np.random.randn(5),
-    'B': ['a', 'b', 'c', 'd', 'e'],
-    'C': np.random.randn(5)
-})
-
-# Display the DataFrame
-print(df)
-time.sleep(1)
-# Create a scatter plot
-plt.figure(figsize=(8, 4))
-plt.scatter(df['A'], df['C'], alpha=0.5)
-plt.title('Scatter Plot of A vs C')
-plt.xlabel('A values')
-plt.ylabel('C values')
-plt.grid(True)
+#| DRAFTY-ID-743-1
+# This should raise a ZeroDivisionError
+1/1
 ```
 
 ## Streaming Plot Test
 ```python
+#| DRAFTY-ID-404-0
 #| this is important
 import matplotlib.pyplot as plt
 import numpy as np
@@ -130,4 +94,49 @@ for i in range(30):
     time.sleep(0.1)
 
 # plt.ioff()  # Turn off interactive mode
+```
+
+## Rich Output Test
+```python
+#| DRAFTY-ID-547-0
+import pandas as pd
+import numpy as np
+import time
+# Create a sample DataFrame
+df = pd.DataFrame({
+    'A': np.random.randn(5),
+    'B': ['a', 'b', 'c', 'd', 'e'],
+    'C': np.random.randn(5)
+})
+
+# Display the DataFrame
+print(df)
+time.sleep(1)
+# Create a scatter plot
+plt.figure(figsize=(8, 4))
+plt.scatter(df['A'], df['C'], alpha=0.5)
+plt.title('Scatter Plot of A vs C')
+plt.xlabel('A values')
+plt.ylabel('C values')
+plt.grid(True)
+```
+
+## Matplotlib Visualization Test
+```python
+#| DRAFTY-ID-469-1
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Create some sample data
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
+
+# Create a plot
+plt.figure(figsize=(8, 6))
+plt.plot(x, y, 'b-', label='sin(x)')
+plt.title('Sine Wave')
+plt.xlabel('x')
+plt.ylabel('sin(x)')
+plt.grid(True)
+plt.legend()
 ```

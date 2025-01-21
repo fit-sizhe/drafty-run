@@ -6,7 +6,7 @@ import { panelOps } from "./ops/panelOps";
 
 import { CodeBlockExecution } from "./types"; // or wherever you keep types
 import { WebviewManager } from "./webview"; // adjust path
-import { StateManager } from "./state_io"; // adjust path
+import { SessionState, StateManager } from "./state_io"; // adjust path
 import { EnvironmentManager, truncatePath } from "./env_setup"; // adjust path
 import { RunnerRegistry } from "./runnerRegistry"; // adjust path
 import {
@@ -15,6 +15,7 @@ import {
   extractCodeFromRange,
   findLanguageForRange,
 } from "./codeBlockParser";
+import * as bind_utils from "./binding_utils";
 
 export namespace commands {
   export async function startSessionHandler(context: vscode.ExtensionContext) {
@@ -137,19 +138,51 @@ export namespace commands {
     if (!stateManager.hasSession(docPath)) {
       vscode.window.showErrorMessage(
         `No active Drafty session for: ${path.basename(docPath)}. ` +
-        `Please run "Drafty: Start Session" first.`,
+          `Please run "Drafty: Start Session" first.`,
       );
       return;
     }
 
+    const currentSession = stateManager.getSession(docPath) as SessionState;
+    // sync all block IDs from the doc
+    await bind_utils.syncAllBlockIds(editor.document, currentSession);
     const code = extractCodeFromRange(editor.document, range);
     const language = findLanguageForRange(editor.document, range);
+
+    // Try to find a DRAFTY-ID in the code block lines
+    // if nothing found, add the line
+    let foundId = bind_utils.ensureDraftyIdInCodeBlock(editor, range);
+
+    // Retrieve that block from session (it should exist after syncAllBlockIds).
+    const blockInSession = currentSession.codeBlocks.get(foundId);
+    if (!blockInSession) {
+      // If for some reason it doesn't exist, create it now
+      currentSession.codeBlocks.set(foundId, {
+        content: code,
+        info: findLanguageForRange(editor.document, range),
+        position: range.start.line, // optional
+        metadata: {
+          status: "pending",
+          timestamp: Date.now(),
+          bindingId: foundId,
+        },
+        outputs: [],
+      });
+    } else {
+      // Reuse old block, but update `content` + language
+      blockInSession.content = code;
+      blockInSession.info = findLanguageForRange(editor.document, range);
+      blockInSession.position = range.start.line; // optional
+      blockInSession.metadata.status = "pending";
+      blockInSession.metadata.timestamp = Date.now();
+    }
 
     await runSingleCodeBlock(
       context,
       docPath,
       code,
       range.start.line,
+      foundId,
       language,
     );
   }
@@ -159,6 +192,7 @@ export namespace commands {
     docPath: string,
     code: string,
     position: number,
+    bindingId: string,
     language: string,
   ) {
     const webviewManager = WebviewManager.getInstance();
@@ -180,28 +214,35 @@ export namespace commands {
     }
 
     currentState.runCount++;
-    const runNumber = currentState.runCount;
-    const blockId = `block-${position}`;
+    let blockExecution = currentState.codeBlocks.get(bindingId);
+    if (!blockExecution) {
+      blockExecution = {
+        content: code,
+        info: language,
+        position,
+        metadata: {
+          status: "running",
+          timestamp: Date.now(),
+          runNumber: currentState.runCount,
+          bindingId: bindingId,
+        },
+        outputs: [],
+      };
+      currentState.codeBlocks.set(bindingId, blockExecution);
+    } else {
+      blockExecution.metadata.runNumber = currentState.runCount;
+      blockExecution.metadata.status = "running";
+      blockExecution.outputs = [];
+    }
 
-    const blockExecution: CodeBlockExecution = {
-      content: code,
-      info: language,
-      position,
-      metadata: {
-        status: "running",
-        timestamp: Date.now(),
-        runNumber,
-      },
-      outputs: [],
-    };
-
-    currentState.codeBlocks.set(blockId, blockExecution);
+    // Re-render before we start
     panelOps.updatePanel(docPath);
 
+    // Ask webview to scroll to this block
     const panel = webviewManager.getPanel(docPath);
     panel?.webview.postMessage({
       command: "scrollToBlock",
-      blockId,
+      blockId: bindingId,
     });
 
     const runner = RunnerRegistry.getInstance().getRunner(
@@ -224,7 +265,7 @@ export namespace commands {
     const onPartialOutput = (partialOutput: any) => {
       const currSession = stateManager.getSession(docPath);
       if (!currSession) return;
-      const block = currSession.codeBlocks.get(blockId);
+      const block = currSession.codeBlocks.get(bindingId);
       if (!block) return;
 
       if (partialOutput.type === "image") {
@@ -242,7 +283,7 @@ export namespace commands {
       }
       panel?.webview.postMessage({
         command: "partialOutput",
-        blockId,
+        blockId: bindingId,
         output: partialOutput,
       });
     };
@@ -252,7 +293,7 @@ export namespace commands {
         docPath,
         code,
         envManager.getSelectedPath(docPath),
-        blockId,
+        bindingId,
         onPartialOutput,
       );
       blockExecution.metadata.status = "success";
@@ -293,7 +334,7 @@ export namespace commands {
     if (!stateManager.hasSession(docPath)) {
       vscode.window.showErrorMessage(
         `No active session for file: ${path.basename(docPath)}. ` +
-        `Please run "Drafty: Start Session" first.`,
+          `Please run "Drafty: Start Session" first.`,
       );
       return;
     }
@@ -311,10 +352,103 @@ export namespace commands {
     }
   }
 
-  //  bindBlockHandler
+  // currently NOT using it
   export function bindBlockHandler(
     _context: vscode.ExtensionContext,
-    _range: vscode.Range,
+    range: vscode.Range,
   ) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      return;
+    }
+
+    const docPath = pathOps.getDocPath(editor);
+    if (!docPath) {
+      vscode.window.showErrorMessage("Please open a Markdown file first.");
+      return;
+    }
+
+    const stateManager = StateManager.getInstance();
+    if (!stateManager.hasSession(docPath)) {
+      vscode.window.showErrorMessage(
+        `No active Drafty session for: ${path.basename(docPath)}. Please run "Drafty: Start Session" first.`,
+      );
+      return;
+    }
+
+    // Ensure there's a "DRAFTY-ID-xxx-y" comment in the code block
+    const bindingId = bind_utils.ensureDraftyIdInCodeBlock(editor, range);
+
+    // Parse the ID to see if it has head/belly/tail
+    let parsed = bind_utils.parseDraftyId(bindingId);
+    if (!parsed) {
+      // If for some reason the ID didn't match the pattern, bail out:
+      vscode.window.showErrorMessage(`Invalid ID format: ${bindingId}`);
+      return;
+    }
+
+    // re-check if we already have blocks with the same belly+tail
+    // If so, we might need to "bump" tail to the next available integer.
+    const session = stateManager.getSession(docPath)!;
+    const existingBlockKey = [...session.codeBlocks.keys()].find((key) => {
+      // Check if this block's metadata has the same bindingId
+      const block = session.codeBlocks.get(key);
+      if (!block || !block.metadata || !block.metadata.bindingId) return false;
+      return block.metadata.bindingId === bindingId;
+    });
+
+    if (!existingBlockKey) {
+      // If no block has this exact ID, check if we need to adjust tail
+      const nextTail = bind_utils.getNextTailForSameBelly(
+        session.codeBlocks,
+        parsed.head,
+        parsed.belly,
+      );
+      if (nextTail !== parsed.tail) {
+        // we found a collision, so let's bump to the nextTail
+        parsed = { ...parsed, tail: nextTail };
+      }
+    }
+
+    // Reconstruct the final ID from parsed parts
+    const finalId = `${parsed.head}-${parsed.belly}-${parsed.tail}`;
+
+    // Create or update a block in the session so it appears in the webview
+    // The key in the map can be `finalId` or you can still use a separate key
+    // but store `bindingId` in metadata.
+    const existingBlock = existingBlockKey
+      ? session.codeBlocks.get(existingBlockKey)
+      : undefined;
+
+    if (!existingBlock) {
+      // brand new block in the session
+      session.codeBlocks.set(finalId, {
+        content: "", // empty for now
+        info: "", // language not strictly needed for "bind"
+        position: range.start.line,
+        metadata: {
+          status: "pending",
+          timestamp: Date.now(),
+          bindingId: finalId,
+        },
+        outputs: [],
+      });
+      vscode.window.showInformationMessage(
+        `Bound new code block to ${finalId}`,
+      );
+    } else {
+      // We already have a block with this ID; update its metadata if needed
+      existingBlock.metadata.bindingId = finalId;
+      vscode.window.showInformationMessage(
+        `Updated existing block ID to ${finalId}`,
+      );
+      // if we changed the tail, we should also change the map key
+      if (existingBlockKey && existingBlockKey !== finalId) {
+        // session.codeBlocks.delete(existingBlockKey);
+        session.codeBlocks.set(finalId, existingBlock);
+      }
+    }
+
+    panelOps.updatePanel(docPath);
   }
 }
