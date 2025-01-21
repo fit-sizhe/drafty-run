@@ -469,6 +469,12 @@ export async function terminateBlockHandler(
   }
 }
 
+// TODO: implement this function
+export function bindBlockHandler(
+  _context: vscode.ExtensionContext,
+  _range: vscode.Range,
+) {}
+
 async function handleLoadResults(docPath: string, panel: vscode.WebviewPanel) {
   // Open a file dialog
   const uris = await vscode.window.showOpenDialog({

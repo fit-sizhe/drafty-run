@@ -31,6 +31,14 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
           arguments: [range],
         };
         codeLenses.push(new vscode.CodeLens(range, termCmd));
+
+        // 3) Bind cell to result block
+        const bindCmd: vscode.Command = {
+          title: "Bind",
+          command: "drafty.bindBlock",
+          arguments: [range],
+        };
+        codeLenses.push(new vscode.CodeLens(range, bindCmd));
       }
     }
     return codeLenses;
