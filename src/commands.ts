@@ -144,8 +144,6 @@ export namespace commands {
     }
 
     const currentSession = stateManager.getSession(docPath) as SessionState;
-    // sync all block IDs from the doc
-    await bind_utils.syncAllBlockIds(editor.document, currentSession);
     const code = extractCodeFromRange(editor.document, range);
     const language = findLanguageForRange(editor.document, range);
 
@@ -176,6 +174,10 @@ export namespace commands {
       blockInSession.metadata.status = "pending";
       blockInSession.metadata.timestamp = Date.now();
     }
+
+    // sync all block IDs from the doc
+    // at this point, all code blocks should have a DRAFTY-ID
+    await bind_utils.syncAllBlockIds(editor.document, currentSession);
 
     await runSingleCodeBlock(
       context,

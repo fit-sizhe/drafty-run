@@ -8,20 +8,16 @@ All notable changes to this project will be documented in this file.
   - bindingId format: 
     - DRAFTY-ID-XXX-Y, i.e. "DRAFTY-ID" + unique 3-digit number + 1 digit number. 
     - the three parts are called head, belly, and tail
-- [ ] code-result block binding
-  - "Bind" codelens 
-    - adds a comment beneath code fence of a format DRAFTY-ID-XXX-0 if NO ID presents
-    - generate new ID only when "bindingID" does not exist in the type of `CodeBlock`
-    - check if there is a result block in webview panel that has the same ID, if not, create an empty result block
-    - If there are some result blocks with the same ID head and belly, create such an empty result block at a location that respects the tail order.
-    - For example, if there are already two result blocks with IDs of DRAFTY-ID-XXX-1 and DRAFTY-ID-XXX-2, and current ID in your code block is DRAFTY-ID-XXX-3, the empty result block should be placed right after the two existing result blocks
+- [x] code-result block binding
   - "Run" codelens
-    - before executing the code, check the order of DRAFTY-ID in both editor and webview panel, based on which rearrange the order of result blocks 
-    - when rearranging, result blocks with the same ID head and belly staty together
-    - make sure that execution results are sending to the result block of the same element ID.
-  - "Bind All" codelens binds all code blocks to result block elements in the result panel
-    - create new result blocks by following the rule above
-    - User might accidentally delete the comment line that has DRAFTY-ID in it. If so, "Bind All" should check if each codeblock has bindingId and makes it re-appear
+    - [x] adds a comment beneath code fence of a format DRAFTY-ID-XXX-0 if NO ID presents
+    - [x] generate new ID only when "bindingID" does not exist in the type of `CodeBlock`
+    - [x] If there are some result blocks with the same ID head and belly, create such an empty result block at a location that respects the tail order.
+    - [x] before executing, check the order of DRAFTY-ID in both editor and webview panel, based on which rearrange the order of result block groups
+    - [x] make sure that execution results are sending to the result block of the same element ID.
+- [x] refactor `commands.ts`
+  - functions are shaken off the script and placed in `src/ops/`
+  - add `binding_utils.ts` that contains utility functions for managing `bindingId`
 
 ## [0.1.4] - 2025-01-15
 

@@ -17,6 +17,11 @@ interface DraftyIdParts {
   tail: number; // e.g. 4
 }
 
+interface BellyGroupDocInfo {
+  belly: string;
+  firstPosition: number; // where we first saw this belly
+}
+
 /** Parse a full "DRAFTY-ID-xxx-y" into its parts, if valid. */
 export function parseDraftyId(str: string): DraftyIdParts | undefined {
   const match = DRAFTY_ID_REGEX.exec(str.trim());
@@ -26,6 +31,19 @@ export function parseDraftyId(str: string): DraftyIdParts | undefined {
     belly: match[2],
     tail: parseInt(match[3], 10),
   };
+}
+
+/**
+ * Parse "belly" and "tail" directly from a code block's DRAFTY-ID comment line.
+ * If not found or invalid, returns { belly: "000", tail: 0 } or something similar.
+ */
+export function parseBellyTail(bindingId: string): { belly: string; tail: number } {
+  const parsed = parseDraftyId(bindingId);
+  if (!parsed) {
+    // fallback if invalid
+    return { belly: "000", tail: 0 };
+  }
+  return { belly: parsed.belly, tail: parsed.tail };
 }
 
 /**
@@ -106,70 +124,189 @@ export function ensureDraftyIdInCodeBlock(
 }
 
 /**
- * Scans the entire markdown doc for code blocks.
- * If any block has a `# DRAFTY-ID-xxx-y` comment, reuse that;
- * if not, generate a new ID. Then reorder session's codeBlocks
- * so that they match the doc’s block order. 
+ * Scans the entire markdown doc, extracts code blocks, and ensures each has a valid DRAFTY-ID.
+ * Then reorders all blocks in session.state according to:
+ *   1) the order of "belly groups" as they appear in the doc (the first time that belly is found),
+ *   2) ascending tail within each belly group,
+ *   3) optionally merges or discards orphan belly groups (those not in the doc).
  */
 export async function syncAllBlockIds(
   doc: vscode.TextDocument,
   session: SessionState
 ): Promise<void> {
-  // Parse doc blocks
+  // Gather user config to see if we remove or keep orphans
+  const config = vscode.workspace.getConfiguration("drafty");
+  const removeOrphanedBlocks: boolean = config.get<boolean>("removeOrphanedBlocks", false);
+
   const markdown = doc.getText();
   const tokens = parseMarkdownContent(markdown);
   const codeBlocks = extractCodeBlocks(tokens);
 
-  // For each extracted code block, ensure we have a bindingId
-  const docEntries: { bindingId: string; position: number }[] = [];
+  /************************************************
+   * Identify the belly group order in the doc
+   ************************************************/
+  
+  const bellyGroupsInDoc: BellyGroupDocInfo[] = [];
+  const seenBellySet = new Set<string>(); // track distinct belly values
+
+  const docBlocksInfo: {
+    belly: string;
+    tail: number;
+    bindingId: string;
+    position: number;
+  }[] = [];
+
+  // For each code block in the doc, find or generate its bindingId
   for (const block of codeBlocks) {
     let foundId: string | undefined;
+    // naive approach: look for a line that matches DRAFTY-ID
     const lines = block.content.split(/\r?\n/);
     for (const line of lines) {
-      const maybeId = line.replace(/^#\|\s*/, "").trim(); // or just /^#\s*/ 
+      const maybeId = line.replace(/^#\|\s*/, "").trim();
       if (parseDraftyId(maybeId)) {
         foundId = maybeId;
         break;
       }
     }
     if (!foundId) {
+      // this line should never be called due the call in 
+      // runBlockHandler
+      // keep it here for debugging purpose
       foundId = generateDraftyId();
     }
-    docEntries.push({ bindingId: foundId, position: block.position });
+
+    const { belly, tail } = parseBellyTail(foundId);
+    docBlocksInfo.push({ belly, tail, bindingId: foundId, position: block.position });
+
+    // If we haven't seen this belly yet, record it with its first position
+    if (!seenBellySet.has(belly)) {
+      seenBellySet.add(belly);
+      bellyGroupsInDoc.push({ belly, firstPosition: block.position });
+    }
   }
 
-  docEntries.sort((a, b) => a.position - b.position);
+  // Sort the doc's belly groups by the first position we saw them
+  bellyGroupsInDoc.sort((a, b) => a.firstPosition - b.firstPosition);
 
+  // docBlocksInfo sorted top-to-bottom
+  docBlocksInfo.sort((a, b) => a.position - b.position);
+
+  /************************************************
+   * Convert session.codeBlocks -> grouped data
+   ************************************************/
   const oldMap = session.codeBlocks;
-  const newMap = new Map<string, CodeBlockExecution>();
+  // belly -> CodeBlockExecution[]
+  const sessionGroups = new Map<string, CodeBlockExecution[]>();
 
-  // Insert or reuse doc-based IDs
-  for (const { bindingId, position } of docEntries) {
-    let existingResult = oldMap.get(bindingId);
+  for (const [_, codeBlock] of oldMap.entries()) {
+    const blockId = codeBlock.metadata?.bindingId;
+    // store "no-id"  and malformed-id blocks in group "999"
+    let groupBelly = "999"
+    if (blockId) {
+      const parsed = parseDraftyId(blockId);
+      if (parsed) groupBelly = parsed.belly;
+    }
+    
+    if (!sessionGroups.has(groupBelly)) {
+      sessionGroups.set(groupBelly, []);
+    }
+    sessionGroups.get(groupBelly)!.push(codeBlock);
+  }
 
-    if (existingResult) {
-      newMap.set(bindingId, existingResult);
-    } else {
-      // create a new block if none existed
-      newMap.set(bindingId, {
-        content: "",
-        info: "",
-        position,
-        metadata: {
-          status: "pending",
-          timestamp: Date.now(),
-          bindingId,
-        },
-        outputs: [],
+  // Sort each belly group by ascending tail
+  for (const [belly, blocks] of sessionGroups) {
+    if(belly === "999") {
+      blocks.sort((a,b) => {
+        return a.position - b.position
+      })
+    } else { 
+      blocks.sort((a, b) => {
+        const aId = parseDraftyId(a.metadata?.bindingId || "");
+        const bId = parseDraftyId(b.metadata?.bindingId || "");
+        if (!aId || !bId) return 0;
+        return aId.tail - bId.tail;
       });
     }
   }
 
-  // Merge in old IDs that are NOT found in the doc
-  for (const [_, oldBlock] of oldMap) {
-    const oldId = oldBlock?.metadata?.bindingId;
-    if (oldId && !newMap.has(oldId)) {
-      newMap.set(oldId, oldBlock);
+  /************************************************
+   * Merge doc blocks into session groups
+   ************************************************/
+  for (const db of docBlocksInfo) {
+    const groupBelly = db.belly;
+    if (!sessionGroups.has(groupBelly)) {
+      sessionGroups.set(groupBelly, []);
+    }
+    const group = sessionGroups.get(groupBelly)!;
+    // Check if we already have a block with bindingId == db.bindingId
+    const existing = group.find(g => g.metadata?.bindingId === db.bindingId);
+    if (!existing) {
+      // Create a new "pending" block
+      const newBlock: CodeBlockExecution = {
+        content: "", // You could store actual code from doc if you want
+        info: "",
+        position: db.position,
+        metadata: {
+          status: "pending",
+          timestamp: Date.now(),
+          bindingId: db.bindingId,
+        },
+        outputs: [],
+      };
+      group.push(newBlock);
+      // Re-sort by tail after adding
+      group.sort((a, b) => {
+        const aId = parseDraftyId(a.metadata?.bindingId || "");
+        const bId = parseDraftyId(b.metadata?.bindingId || "");
+        if (!aId || !bId) return 0;
+        return aId.tail - bId.tail;
+      });
+    }
+  }
+
+  /************************************************
+   * Build newMap in doc belly order, then orphans
+   ************************************************/
+  const newMap = new Map<string, CodeBlockExecution>();
+
+  // Insert doc belly groups in the doc's order
+  for (const groupInfo of bellyGroupsInDoc) {
+    const belly = groupInfo.belly;
+    const blocks = sessionGroups.get(belly);
+    if (!blocks) {
+      continue;
+    }
+    // Already sorted by tail
+    for (const block of blocks) {
+      const id = block.metadata?.bindingId;
+      if (id) {
+        newMap.set(id, block);
+      }
+    }
+    // Mark we've handled this belly
+    sessionGroups.delete(belly);
+  }
+
+  // handle orphan belly groups (those not in the doc)
+  // either remove them or keep them after the doc groups
+  for (const [belly, blocks] of sessionGroups) {
+    if (seenBellySet.has(belly)) {
+      // already handled these in doc order
+      // skip
+      continue;
+    }
+
+    // If `removeOrphanedBlocks` is true, skip them
+    if (removeOrphanedBlocks) {
+      continue;
+    }
+
+    // Otherwise, keep them at the bottom
+    for (const block of blocks) {
+      const id = block.metadata?.bindingId;
+      if (id) {
+        newMap.set(id, block);
+      }
     }
   }
 
