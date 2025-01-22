@@ -10,30 +10,9 @@ im = Image.open("../assets/icon.png")
 print(im.format, im.size, im.mode)
 ```
 
-## Basic Output Test
-
-```python
-#| DRAFTY-ID-145-2
-print("Hello, World!")
-import torch
-x = 46
-print(f"The value of x is {x}")
-```
-
-## State Persistence Test
-```python
-#| DRAFTY-ID-398-1
-# x should still be 42 from the first code block
-print(f"x is still {x}")
-import numpy as np
-# Create a new variable
-y = np.array([1, 2, 3])
-print(f"y is {y}")
-```
-
 ## Stream Output Test
 ```python
-#| DRAFTY-ID-864-0
+#| DRAFTY-ID-163-1
 import time
 
 # This should show output gradually
@@ -43,6 +22,27 @@ for i in range(5):
     print(f'Step {i+1} complete!')
 
 print('\nAll processing complete!')
+```
+
+## Basic Output Test
+
+```python
+#| DRAFTY-ID-145-1
+print("Hello, World!")
+import torch
+x = 46
+print(f"The value of x is {x}")
+```
+
+## State Persistence Test
+```python
+#| DRAFTY-ID-815-0
+# x should still be 42 from the first code block
+print(f"x is still {x}")
+import numpy as np
+# Create a new variable
+y = np.array([1, 2, 3])
+print(f"y is {y}")
 ```
 
 ## Error Handling Test

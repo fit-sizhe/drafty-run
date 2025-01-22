@@ -4,10 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- [x] replace `blockId` with `bindingId`
-  - bindingId format: 
-    - DRAFTY-ID-XXX-Y, i.e. "DRAFTY-ID" + unique 3-digit number + 1 digit number. 
-    - the three parts are called head, belly, and tail
+- [ ] move `binding_utils` to `src/ops`
+
+## [0.1.6] - 2025-01-22
+
 - [x] code-result block binding
   - "Run" codelens
     - [x] adds a comment beneath code fence of a format DRAFTY-ID-XXX-0 if NO ID presents
@@ -15,6 +15,14 @@ All notable changes to this project will be documented in this file.
     - [x] If there are some result blocks with the same ID head and belly, create such an empty result block at a location that respects the tail order.
     - [x] before executing, check the order of DRAFTY-ID in both editor and webview panel, based on which rearrange the order of result block groups
     - [x] make sure that execution results are sending to the result block of the same element ID.
+    - [x] update result blocks by the order of belly number
+
+## [0.1.5] - 2025-01-21
+
+- [x] replace `blockId` with `bindingId`
+  - bindingId format: 
+    - DRAFTY-ID-XXX-Y, i.e. "DRAFTY-ID" + unique 3-digit number + 1 digit number. 
+    - the three parts are called head, belly, and tail
 - [x] refactor `commands.ts`
   - functions are shaken off the script and placed in `src/ops/`
   - add `binding_utils.ts` that contains utility functions for managing `bindingId`

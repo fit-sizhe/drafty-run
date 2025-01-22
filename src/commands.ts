@@ -144,12 +144,16 @@ export namespace commands {
     }
 
     const currentSession = stateManager.getSession(docPath) as SessionState;
-    const code = extractCodeFromRange(editor.document, range);
-    const language = findLanguageForRange(editor.document, range);
 
     // Try to find a DRAFTY-ID in the code block lines
     // if nothing found, add the line
     let foundId = bind_utils.ensureDraftyIdInCodeBlock(editor, range);
+    // sync all block IDs from the doc
+    // at this point, all code blocks should have a DRAFTY-ID
+    await bind_utils.syncAllBlockIds(editor.document, currentSession);
+
+    const code = extractCodeFromRange(editor.document, range);
+    const language = findLanguageForRange(editor.document, range);
 
     // Retrieve that block from session (it should exist after syncAllBlockIds).
     const blockInSession = currentSession.codeBlocks.get(foundId);
@@ -175,9 +179,6 @@ export namespace commands {
       blockInSession.metadata.timestamp = Date.now();
     }
 
-    // sync all block IDs from the doc
-    // at this point, all code blocks should have a DRAFTY-ID
-    await bind_utils.syncAllBlockIds(editor.document, currentSession);
 
     await runSingleCodeBlock(
       context,
