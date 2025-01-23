@@ -6,7 +6,8 @@ All notable changes to this project will be documented in this file.
 
 - [ ] move `binding_utils` to `src/ops`
 - [ ] reorg codebase for 0.2
-- [ ] update props definitions
+- [ ] allow title appearance in result blocks
+- [x] update props definitions
 - [ ] test props `removeOrphanedBlocks`
 - [ ] test props `defaultPath`
 - [ ] test props `savingRule`

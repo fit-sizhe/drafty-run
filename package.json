@@ -29,6 +29,11 @@
           "description": "Default path used when saving results JSON with the 'Save' button.",
           "default": ""
         },
+        "drafty.removeOrphanedBlocks": {
+          "type": "boolean",
+          "description": "Whether remove result blocks from the panel when its ID has no match in MD doc",
+          "default": false
+        },
         "drafty.savingRule": {
           "type": "string",
           "enum": [
