@@ -37,6 +37,13 @@ export interface CodeBlock {
   content: string;
   info: string;
   position: number; // Line number in document where block starts
+  title?: string;
+  language?: string;
+  bindingId?: {
+    head: string; // e.g. "DRAFTY-ID"
+    belly: string; // e.g. "123"
+    tail: number; // e.g. 4
+  }
 }
 
 export interface ExecutionState {
@@ -52,6 +59,7 @@ export interface ExecutionMetadata {
   timestamp: number;
   bindingId?: string;
   runNumber?: number;
+  title?: string;
 }
 
 export interface CodeBlockExecution extends CodeBlock {
