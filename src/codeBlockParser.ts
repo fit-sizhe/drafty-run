@@ -1,52 +1,65 @@
 import * as vscode from "vscode";
 import markdownit from "markdown-it";
+import { Token } from "markdown-it";
 import { CodeBlock } from "./types";
 
-// Language-specific comment patterns
-const TITLE_COMMENT_PATTERNS = new Map<string, RegExp>([
-  ['python', /^#\|\s*title:\s*(.+)$/m],
-  ['javascript', /^\/\/\|\s*title:\s*(.+)$/m],
-]);
+// Language-agnostic comment patterns
+const TITLE_PATTERN = /^\s*([#/]{1,2}|--)\s*\|\s*title:\s*(.+)$/m;
+const BINDINGID_PATTERN = /^\s*([#/]{1,2}|--)\s*\|\s*(DRAFTY-ID)-(\d{3})-(\d)$/m;
+const BARE_DRAFTYID_PATTERN = /^(DRAFTY-ID)-(\d{3})-(\d)$/;
 
-const BINDINGID_COMMENT_PATTERNS = new Map<string, RegExp>([
-  ['python', /^#\|\s+(DRAFTY-ID)-(\d{3})-(\d)$/m],
-  ['javascript', /^\/\/\|\s+(DRAFTY-ID)-(\d{3})-(\d)$/m],
-]);
+interface DraftyIdParts {
+  head: string; // e.g. "DRAFTY-ID"
+  belly: string; // e.g. "123"
+  tail: number; // e.g. 4
+}
 
+export function parseDraftyId(str: string, bare=false): DraftyIdParts | undefined {
+  const match = bare? BARE_DRAFTYID_PATTERN.exec(str.trim()):BINDINGID_PATTERN.exec(str.trim());
+  if (!match) return undefined;
+  return {
+    head: match[2],
+    belly: match[3],
+    tail: parseInt(match[4], 10),
+  };
+}
 
-export function extractCodeBlocks(tokens: any[]): CodeBlock[] {
+/**
+ * Parse "belly" and "tail" directly from a code block's DRAFTY-ID comment line.
+ * If not found or invalid, returns { belly: "000", tail: 0 } or something similar.
+ */
+export function parseBellyTail(bindingId: string): { belly: string; tail: number } {
+  const parsed = parseDraftyId(bindingId);
+  if (!parsed) {
+    // fallback if invalid
+    return { belly: "000", tail: 0 };
+  }
+  return { belly: parsed.belly, tail: parsed.tail };
+}
+
+export function extractCodeBlocks(tokens: Token[]): CodeBlock[] {
   return tokens
     .filter(t => t.type === "fence" && t.map)
     .map(token => {
       const language = token.info.trim().toLowerCase();
-      const titleRegex = TITLE_COMMENT_PATTERNS.get(language);
-      const bindingIdRegex = BINDINGID_COMMENT_PATTERNS.get(language);
       let title: string | undefined;
-      let bindingId: undefined | {
-        head: string;
-        belly: string; 
-        tail: number; 
-      };
+      let bindingId: undefined | DraftyIdParts;
       
-      if (titleRegex) {
-        const match = token.content.match(titleRegex);
-        title = match?.[1]?.trim();
-      }
-      if (bindingIdRegex){
-        const match = token.content.match(bindingIdRegex);
-        if (match) {
-          bindingId = {
-            head: match[1],
-            belly: match[2],
-            tail: parseInt(match[3], 10),
-          };
-        }
+      const titlematch = token.content.match(TITLE_PATTERN);
+      title = titlematch?.[2]?.trim();
+      const idmatch = token.content.match(BINDINGID_PATTERN);
+      if (idmatch) {
+        bindingId = {
+          head: idmatch[2],
+          belly: idmatch[3],
+          tail: parseInt(idmatch[4], 10),
+        };
       }
 
       return {
         content: token.content,
         info: token.info.trim(),
-        position: token.map[0],
+        position: token.map![0],
         title,
         language,
         bindingId
@@ -63,6 +76,7 @@ export function extractCodeFromRange(
   document: vscode.TextDocument,
   range: vscode.Range,
 ): string {
+  if(range.end.line-range.start.line<=1) return "";
   let code = document.getText(range);
   return code.replace(/^```[\w\-]*\s*|```$/gm, "");
 }
