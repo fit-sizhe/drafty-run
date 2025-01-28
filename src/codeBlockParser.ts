@@ -14,13 +14,18 @@ interface DraftyIdParts {
   tail: number; // e.g. 4
 }
 
-export function parseDraftyId(str: string, bare=false): DraftyIdParts | undefined {
-  const match = bare? BARE_DRAFTYID_PATTERN.exec(str.trim()):BINDINGID_PATTERN.exec(str.trim());
+export function parseDraftyId(str: string): DraftyIdParts | undefined {
+  let match: RegExpExecArray | null;
+  if(!str.includes('|')){
+    match = BARE_DRAFTYID_PATTERN.exec(str.trim());
+  } else {
+    match = BINDINGID_PATTERN.exec(str.trim());
+  }
   if (!match) return undefined;
   return {
-    head: match[2],
-    belly: match[3],
-    tail: parseInt(match[4], 10),
+    head: 'DRAFTY-ID',
+    belly: str.includes('|')?match[3]:match[2],
+    tail: parseInt(str.includes('|')?match[4]:match[3], 10),
   };
 }
 
