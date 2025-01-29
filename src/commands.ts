@@ -145,15 +145,17 @@ export namespace commands {
 
     const currentSession = stateManager.getSession(docPath) as SessionState;
 
+    // extract info/code before any change
+    const code = extractCodeFromRange(editor.document, range);
+    const language = findLanguageForRange(editor.document, range);
+
     // Try to find a DRAFTY-ID in the code block lines
     // if nothing found, add the line
-    let foundId = bind_utils.ensureDraftyIdInCodeBlock(editor, range);
+    // range is invalidated after this line
+    let foundId = await bind_utils.ensureDraftyIdInCodeBlock(editor, range);
     // sync all block IDs from the doc
     // at this point, all code blocks should have a DRAFTY-ID
     await bind_utils.syncAllBlockIds(editor.document, currentSession);
-
-    const code = extractCodeFromRange(editor.document, range);
-    const language = findLanguageForRange(editor.document, range);
 
     // Retrieve that block from session (it should exist after syncAllBlockIds).
     const blockInSession = currentSession.codeBlocks.get(foundId);
@@ -161,10 +163,10 @@ export namespace commands {
       // If for some reason it doesn't exist, create it now
       currentSession.codeBlocks.set(foundId, {
         content: code,
-        info: findLanguageForRange(editor.document, range),
+        info: language,
         position: range.start.line, // optional
         metadata: {
-          status: "pending",
+          status: "running",
           timestamp: Date.now(),
           bindingId: foundId,
         },
@@ -173,9 +175,9 @@ export namespace commands {
     } else {
       // Reuse old block, but update `content` + language
       blockInSession.content = code;
-      blockInSession.info = findLanguageForRange(editor.document, range);
+      blockInSession.info = language;
       blockInSession.position = range.start.line; // optional
-      blockInSession.metadata.status = "pending";
+      blockInSession.metadata.status = "running";
       blockInSession.metadata.timestamp = Date.now();
     }
 

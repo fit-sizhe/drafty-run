@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { CodeBlockExecution, CellOutput } from "./types";
 import { Environment } from "./env_setup";
-import { parseDraftyId } from "./binding_utils";
+import { parseDraftyId } from "./codeBlockParser";
 
 interface PanelInfo {
   panel: vscode.WebviewPanel;
@@ -114,6 +114,7 @@ export class WebviewManager {
   updateContent(
     docPath: string,
     blocks: Map<string, CodeBlockExecution>,
+    sortedBellies: string[],
     environments: Environment[],
     selectedPath: string,
   ): void {
@@ -123,6 +124,7 @@ export class WebviewManager {
     }
     info.panel.webview.html = this.getWebviewContent(
       blocks,
+      sortedBellies,
       environments,
       selectedPath,
       info.maxResultHeight,
@@ -142,6 +144,7 @@ export class WebviewManager {
 
   private getWebviewContent(
     blocks: Map<string, CodeBlockExecution>,
+    sortedBellies: string[], // sorted belly groups
     environments: Environment[],
     selectedPath: string,
     maxResultHeight: number,
@@ -166,17 +169,12 @@ export class WebviewManager {
         if (aId && bId) {
           // compare belly
           if (aId.belly !== bId.belly) {
-            return (a.position ?? 0) - (b.position ?? 0);
+            return sortedBellies.indexOf(aId.belly) - sortedBellies.indexOf(bId.belly);
           }
           // compare tail
           return aId.tail - bId.tail;
-        } else if (aId && !bId) {
-          // a has ID, b does not -> put b after a
-          return -1;
-        } else if (!aId && bId) {
-          return 1;
-        }
-        // if neither has an ID, fallback to position
+        } 
+        // fallback to position
         return (a.position ?? 0) - (b.position ?? 0);
       });
 
@@ -192,9 +190,7 @@ export class WebviewManager {
           : "Output [?]";
 
         // If we have a valid bindingId, prefer that, else fallback to old "block-position"
-        const containerKey = parseDraftyId(block.metadata?.bindingId ?? "")
-          ? block.metadata.bindingId
-          : "block-" + block.position;
+        const containerKey = block.metadata.bindingId??"block-" + block.position;
 
         const blockContainerId = `result-block-${containerKey}`;
         const outputsHtml = block.outputs

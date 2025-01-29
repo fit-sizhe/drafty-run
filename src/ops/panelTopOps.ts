@@ -23,6 +23,7 @@ export namespace panelTopOps {
     webviewManager.updateContent(
       docPath,
       session.codeBlocks,
+      session.bellyGroups??[],
       envManager.getEnvironments(),
       envManager.getSelectedPath(docPath),
     );

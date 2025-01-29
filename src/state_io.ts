@@ -6,6 +6,7 @@ export interface SessionState {
   codeBlocks: Map<string, CodeBlockExecution>;
   currentBlockIndex: number;
   runCount: number;
+  bellyGroups?: string[]; // order of belly groups
 }
 
 export interface LoadResult {
