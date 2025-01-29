@@ -3,8 +3,8 @@ import * as vscode from "vscode";
 import { panelTopOps } from "./panelTopOps";
 
 import { RunnerRegistry } from "../runnerRegistry";
-import { StateManager } from "../state_io";
-import { EnvironmentManager } from "../env_setup";
+import { StateManager } from "../state";
+import { EnvironmentManager } from "../env";
 import { WebviewManager } from "../webview";
 
 export namespace panelOps {

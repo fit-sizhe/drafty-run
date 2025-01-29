@@ -6,8 +6,8 @@ import { panelOps } from "./ops/panelOps";
 
 import { CodeBlockExecution } from "./types"; // or wherever you keep types
 import { WebviewManager } from "./webview"; // adjust path
-import { SessionState, StateManager } from "./state_io"; // adjust path
-import { EnvironmentManager, truncatePath } from "./env_setup"; // adjust path
+import { SessionState, StateManager } from "./state"; // adjust path
+import { EnvironmentManager, truncatePath } from "./env"; // adjust path
 import { RunnerRegistry } from "./runnerRegistry"; // adjust path
 import {
   extractCodeBlocks,
@@ -15,7 +15,7 @@ import {
   extractCodeFromRange,
   findLanguageForRange,
 } from "./codeBlockParser";
-import * as bind_utils from "./binding_utils";
+import * as bind_utils from "./binding";
 
 export namespace commands {
   export async function startSessionHandler(context: vscode.ExtensionContext) {

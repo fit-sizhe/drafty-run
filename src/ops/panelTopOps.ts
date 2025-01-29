@@ -3,10 +3,10 @@ import * as path from "path";
 import * as fs from "fs";
 import { pathOps } from "./pathOps";
 
-import { StateManager } from "../state_io";
-import { truncatePath } from "../env_setup";
+import { StateManager } from "../state";
+import { truncatePath } from "../env";
 import { WebviewManager } from "../webview";
-import { EnvironmentManager } from "../env_setup";
+import { EnvironmentManager } from "../env";
 
 export namespace panelTopOps {
   // same as updatePanel in panelOps,

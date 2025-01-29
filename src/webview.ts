@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { CodeBlockExecution, CellOutput } from "./types";
-import { Environment } from "./env_setup";
+import { Environment } from "./env";
 import { parseDraftyId } from "./codeBlockParser";
 
 interface PanelInfo {
