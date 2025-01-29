@@ -6,7 +6,6 @@ const {
   extractCodeBlocks,
   parseMarkdownContent,
   extractCodeFromRange,
-  findLanguageForRange
 } = require('../out/codeBlockParser');
 
 // Mock vscode.TextDocument
@@ -304,6 +303,5 @@ describe('Markdown Parser Tests', () => {
       assert.strictEqual(code, '');
     });
   });
-
 
 });

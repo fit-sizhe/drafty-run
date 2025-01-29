@@ -12,6 +12,12 @@ interface BellyGroupDocInfo {
 
 const CONFIG_SECTION = "drafty";
 const ORPHAN_REMOVAL_KEY = "removeOrphanedBlocks";
+const COMMENT_PREFIX: { [id: string]: string;} = {
+    "javascript": "//",
+    "js": "//",
+    "python": "#",
+    "lua": "--"
+};
 
 export function generateDraftyId(): string {
     const belly = Math.floor(Math.random() * 999).toString().padStart(3, "0");
@@ -38,11 +44,11 @@ export async function ensureDraftyIdInCodeBlock(
 ): Promise<string> {
     const document = editor.document;
     const code = document.getText(range);
-    const blocks = extractCodeBlocksFromText(code);
+    const block = extractCodeBlocksFromText(code)[0];
 
     // Use the parser's extracted binding ID if available
-    const existingId = blocks[0]?.bindingId?.head ? 
-        `${blocks[0].bindingId.head}-${blocks[0].bindingId.belly}-${blocks[0].bindingId.tail}` :
+    const existingId = block?.bindingId?.head ? 
+        `${block.bindingId.head}-${block.bindingId.belly}-${block.bindingId.tail}` :
         undefined;
 
     if (existingId) return existingId;
@@ -52,7 +58,7 @@ export async function ensureDraftyIdInCodeBlock(
     await editor.edit(editBuilder => {
         editBuilder.insert(
             new vscode.Position(range.start.line + 1, 0),
-            `#| ${newId}\n`
+            `${COMMENT_PREFIX[block.language??"python"]}| ${newId}\n`
         );
     });
     return newId;
