@@ -4,15 +4,15 @@
 ## Basic Path Test
 
 ```python
-#| DRAFTY-ID-068-0
+#| DRAFTY-ID-650-1
 from PIL import Image
-im = Image.open("../assets/icon.png")
+im = Image.open("../../assets/icon.png")
 print(im.format, im.size, im.mode)
 ```
 
 ## Stream Output Test
 ```python
-#| DRAFTY-ID-163-1
+#| DRAFTY-ID-794-1
 import time
 
 # This should show output gradually
@@ -27,7 +27,7 @@ print('\nAll processing complete!')
 ## Basic Output Test
 
 ```python
-#| DRAFTY-ID-145-1
+#| DRAFTY-ID-839-0
 print("Hello, World!")
 import torch
 x = 46

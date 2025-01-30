@@ -4,7 +4,6 @@ import { CodeBlockExecution } from "./types";
 
 export interface SessionState {
   codeBlocks: Map<string, CodeBlockExecution>;
-  currentBlockIndex: number;
   runCount: number;
   bellyGroups?: string[]; // order of belly groups
 }
@@ -51,10 +50,9 @@ export class StateManager {
   clearSession(docPath: string): void {
     const session = this.sessions.get(docPath);
     if (session) {
-      // Reset all code blocks to 'pending', or empty them, etc.
       session.runCount = 0;
-      session.currentBlockIndex = 0;
       session.codeBlocks = new Map();
+      session.bellyGroups = [];
     }
   }
 
@@ -118,8 +116,8 @@ export class StateManager {
 
   serializeSessionState(state: SessionState): any {
     const blocksArray = Array.from(state.codeBlocks.entries()).map(
-      ([blockId, exec]) => ({
-        blockId,
+      ([bindingId, exec]) => ({
+        bindingId,
         content: exec.content,
         info: exec.info,
         position: exec.position,
@@ -128,16 +126,17 @@ export class StateManager {
       }),
     );
     return {
-      currentBlockIndex: state.currentBlockIndex,
       runCount: state.runCount,
       codeBlocks: blocksArray,
+      bellyGroups: state.bellyGroups
     };
   }
 
   deserializeSessionState(savedObj: any): SessionState {
     const blockMap = new Map<string, CodeBlockExecution>();
     for (const item of savedObj.codeBlocks) {
-      blockMap.set(item.blockId, {
+      blockMap.set(item.bindingId, {
+        bindingId: item.bindingId,
         content: item.content,
         info: item.info,
         position: item.position,
@@ -146,9 +145,9 @@ export class StateManager {
       });
     }
     return {
-      currentBlockIndex: savedObj.currentBlockIndex,
       runCount: savedObj.runCount,
       codeBlocks: blockMap,
+      bellyGroups: savedObj.bellyGroups
     };
   }
 }

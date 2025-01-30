@@ -109,7 +109,7 @@ export namespace commands {
 
       const newState = {
         codeBlocks: blockMap,
-        currentBlockIndex: 0,
+        bellyGroups: [],
         runCount: 0,
       };
       stateManager.setSession(mdFullPath, newState);
