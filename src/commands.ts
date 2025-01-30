@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
-import { pathOps } from "./ops/pathOps";
-import { panelOps } from "./ops/panelOps";
+import { pathOps } from "./pathOps";
+import { panelOps } from "./panel/panelOps";
 
 import { CodeBlockExecution } from "./types"; // or wherever you keep types
 import { WebviewManager } from "./webview"; // adjust path
