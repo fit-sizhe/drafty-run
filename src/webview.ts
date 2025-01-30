@@ -191,6 +191,10 @@ export class WebviewManager {
 
         // If we have a valid bindingId, prefer that, else fallback to old "block-position"
         const containerKey = block.metadata.bindingId??"block-" + block.position;
+        let resultTitle: string;
+        if (block.bindingId && block.title) {
+          resultTitle = block.title + " (" + block.bindingId.tail + ")";
+        } else resultTitle = containerKey;
 
         const blockContainerId = `result-block-${containerKey}`;
         const outputsHtml = block.outputs
@@ -203,7 +207,7 @@ export class WebviewManager {
                          style="max-height: ${maxResultHeight}px; overflow-y: auto;">
                         <div class="block-header">
                             <span class="status">${runLabel}</span>
-                            <span class="time">${containerKey}</span>
+                            <span class="time">${resultTitle}</span>
                             <span class="time">${executionTime}</span>
                         </div>
                         <div class="block-outputs">

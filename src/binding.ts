@@ -72,16 +72,16 @@ export async function syncAllBlockIds(
     const removeOrphans = config.get<boolean>(ORPHAN_REMOVAL_KEY, false);
 
     // Extract code blocks from document using our parser
-    const codeBlocks = extractCodeBlocksFromDocument(doc);
+    const docBlocks = extractCodeBlocksFromDocument(doc);
     
     // Process document structure
-    const { bellyGroups, docBlockIds } = processDocumentBlocks(codeBlocks);
+    const { bellyGroups, docBlockMap } = processDocumentBlocks(docBlocks);
     
     // Reorganize session blocks based on document structure
     const { updatedBlocks } = reorganizeSessionBlocks(
         session.codeBlocks,
         bellyGroups,
-        docBlockIds,
+        docBlockMap,
         removeOrphans
     );
 
@@ -103,7 +103,7 @@ function extractCodeBlocksFromDocument(doc: vscode.TextDocument): CodeBlock[] {
 function processDocumentBlocks(blocks: CodeBlock[]) {
     const bellyGroups: BellyGroupDocInfo[] = [];
     const seenBellies = new Set<string>();
-    const docBlockIds: string[] = [];
+    const docBlockMap: Map<string, CodeBlock> = new Map();
 
     // First pass: Identify all bellies and their first positions
     for (const block of blocks) {
@@ -124,16 +124,16 @@ function processDocumentBlocks(blocks: CodeBlock[]) {
     for (const block of blocks) {
         const belly = block.bindingId?.belly || "999";
         const tail = block.bindingId?.tail || 0;
-        docBlockIds.push(`${belly}-${tail}`);
+        docBlockMap.set(`DRAFTY-ID-${belly}-${tail}`,block);
     }
 
-    return { bellyGroups, docBlockIds };
+    return { bellyGroups, docBlockMap };
 }
 
 function reorganizeSessionBlocks(
     existingBlocks: Map<string, CodeBlockExecution>,
     bellyGroups: BellyGroupDocInfo[],
-    docBlockIds: string[],
+    docBlockMap: Map<string, CodeBlock>,
     removeOrphans: boolean
 ) {
     const updatedBlocks = new Map<string, CodeBlockExecution>();
@@ -154,7 +154,8 @@ function reorganizeSessionBlocks(
 
         for (const block of groupBlocks) {
             if (block.metadata?.bindingId) {
-                updatedBlocks.set(block.metadata.bindingId, block);
+                let updatedBlock = {...block, ...docBlockMap.get(block.metadata.bindingId)}
+                updatedBlocks.set(block.metadata.bindingId, updatedBlock);
                 orphanedBlocks.delete(block.metadata.bindingId);
             }
         }
@@ -173,11 +174,13 @@ function reorganizeSessionBlocks(
     }
 
     // 3. Add new blocks from document that weren't in session
-    for (const docId of docBlockIds) {
+    for (const docId of docBlockMap.keys()) {
         if (!updatedBlocks.has(docId)) {
             const newBlock: CodeBlockExecution = {
+                ...docBlockMap.get(docId),
                 content: "",
                 info: "",
+                bindingId: parseDraftyId(docId),
                 position: -1, // Will be updated during execution
                 metadata: {
                     status: "pending",

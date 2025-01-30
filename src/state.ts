@@ -160,13 +160,8 @@ export class StateManager {
 
   serializeSessionState(state: SessionState): any {
     const blocksArray = Array.from(state.codeBlocks.entries()).map(
-      ([bindingId, exec]) => ({
-        bindingId,
-        content: exec.content,
-        info: exec.info,
-        position: exec.position,
-        metadata: exec.metadata,
-        outputs: exec.outputs,
+      ([_bindingId, exec]) => ({
+        ...exec
       }),
     );
     return {
@@ -179,13 +174,8 @@ export class StateManager {
   deserializeSessionState(savedObj: any): SessionState {
     const blockMap = new Map<string, CodeBlockExecution>();
     for (const item of savedObj.codeBlocks) {
-      blockMap.set(item.bindingId, {
-        bindingId: item.bindingId,
-        content: item.content,
-        info: item.info,
-        position: item.position,
-        metadata: item.metadata,
-        outputs: item.outputs,
+      blockMap.set(item.metadata.bindingId, {
+        ...item
       });
     }
     return {

@@ -14,6 +14,7 @@ import {
   parseMarkdownContent,
   extractCodeFromRange,
   findLanguageForRange,
+  parseDraftyId,
 } from "./codeBlockParser";
 import * as bind_utils from "./binding";
 
@@ -84,7 +85,7 @@ export namespace commands {
       // Merge new code blocks into existing session
       const currSession = stateManager.getSession(mdFullPath)!;
       codeBlocks.forEach((block) => {
-        const blockId = `block-${block.position}`;
+        const blockId = `DRAFTY-ID-${block.bindingId?.belly||"999"}-${block.bindingId?.tail||"0"}`;
         if (!currSession.codeBlocks.has(blockId)) {
           currSession.codeBlocks.set(blockId, {
             ...block,
@@ -99,7 +100,7 @@ export namespace commands {
       // New session
       const blockMap = new Map<string, CodeBlockExecution>();
       codeBlocks.forEach((block) => {
-        const blockId = `block-${block.position}`;
+        const blockId = `DRAFTY-ID-${block.bindingId?.belly||"999"}-${block.bindingId?.tail||"0"}`;
         blockMap.set(blockId, {
           ...block,
           metadata: { status: "pending", timestamp: Date.now() },
@@ -164,6 +165,7 @@ export namespace commands {
       currentSession.codeBlocks.set(foundId, {
         content: code,
         info: language,
+        bindingId: parseDraftyId(foundId),
         position: range.start.line, // optional
         metadata: {
           status: "running",
@@ -225,6 +227,7 @@ export namespace commands {
         content: code,
         info: language,
         position,
+        bindingId: parseDraftyId(bindingId),
         metadata: {
           status: "running",
           timestamp: Date.now(),
