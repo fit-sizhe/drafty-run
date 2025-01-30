@@ -48,15 +48,15 @@
     "commands": [
       {
         "command": "drafty.startSession",
-        "title": "drafty: Start Markdown Code Session"
+        "title": "Drafty: Start Markdown Code Session"
       },
       {
         "command": "drafty.runBlock'",
-        "title": "drafty: Run"
+        "title": "Drafty: Run"
       },
       {
         "command": "drafty.terminateBlock",
-        "title": "drafty: Terminate"
+        "title": "Drafty: Terminate"
       }
     ]
   },

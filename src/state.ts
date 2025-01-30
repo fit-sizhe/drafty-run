@@ -1,6 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as vscode from "vscode";
 import { CodeBlockExecution } from "./types";
+
+const CONFIG_SECTION = "drafty";
+const DEFAULT_PATH_KEY = "defaultPath";
+const SAVING_RULE_KEY = "savingRule";
 
 export interface SessionState {
   codeBlocks: Map<string, CodeBlockExecution>;
@@ -56,7 +61,15 @@ export class StateManager {
     }
   }
 
-  saveSession(mdFullPath: string, session: SessionState): string {
+  saveSession(mdFullPath: string) {
+    const session = this.getSession(mdFullPath);
+    if(!session) {
+      vscode.window.showErrorMessage(
+        "No session to save. Please run or load results first.",
+      );
+      return "";
+    };
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     const baseName = path.basename(mdFullPath, ".md");
     const now = new Date();
     const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, "");
@@ -64,22 +77,53 @@ export class StateManager {
       String(now.getHours()).padStart(2, "0") +
       String(now.getMinutes()).padStart(2, "0");
     const fileName = `${baseName}-state-${yyyymmdd}-${hhmm}.json`;
-    const defaultFolder = path.dirname(mdFullPath);
-    const fullSavePath = path.join(defaultFolder, fileName);
 
-    const dataToSave = this.serializeSessionState(session);
-    fs.writeFileSync(
-      fullSavePath,
-      JSON.stringify(dataToSave, null, 2),
-      "utf-8",
-    );
+    // save file to default path if it is set up in settings.json
+    // the path is relevant to current workspace root
+    const docDir = path.dirname(mdFullPath);
+    let saveDir = config.get<string>(DEFAULT_PATH_KEY);
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if(workspaceRoot && saveDir){
+      saveDir = path.resolve(workspaceRoot, saveDir);
+    } else saveDir = docDir;
+    const fullSavePath = path.join(saveDir, fileName);
+    const savingRule = config.get<string>(SAVING_RULE_KEY,"keep-all");
+
+    // delete all old state json files if saving rule is set to "latest-only"
+    if (savingRule == "latest-only" && fs.existsSync(saveDir)) {
+      const re = new RegExp(`^${baseName}-state-(\\d{8})-(\\d{4})\\.json$`);
+      const files = fs.readdirSync(saveDir).filter((f) => re.test(f));
+      for (const f of files) {
+        fs.rmSync(path.join(saveDir,f));
+      }
+    }
+
+    try {
+      const dataToSave = this.serializeSessionState(session);
+      fs.writeFileSync(
+        fullSavePath,
+        JSON.stringify(dataToSave, null, 2),
+        "utf-8",
+      );
+    } catch(err) {
+      vscode.window.showErrorMessage(`Failed to save JSON: ${err}`);
+      return "";
+    }
 
     return fullSavePath;
   }
 
   // Try to load the most recent JSON state for the given .md file
   tryLoadPreviousState(mdFullPath: string): LoadResult | undefined {
-    const dir = path.dirname(mdFullPath);
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+
+    // find path to saved state json files
+    let dir =config.get<string>(DEFAULT_PATH_KEY);
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (dir && workspaceRoot) {
+      dir = path.resolve(workspaceRoot, dir);
+    } else dir =  path.dirname(mdFullPath);
+
     const baseName = path.basename(mdFullPath, ".md");
     const re = new RegExp(`^${baseName}-state-(\\d{8})-(\\d{4})\\.json$`);
 
