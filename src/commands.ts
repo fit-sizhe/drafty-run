@@ -321,6 +321,29 @@ export namespace commands {
     blockExecution.metadata.executionTime =
       Date.now() - blockExecution.metadata.timestamp;
     panelOps.updatePanel(docPath);
+    
+    // TEMPORARY PATCH: make sure short executions scroll into view
+    // TODO: replace "updatePanel" with fine-grained element updates
+    if (panel) {
+      // Create a promise to wait for scroll completion
+      const scrollCompletion = new Promise<void>((resolve) => {
+        const disposable = panel!.webview.onDidReceiveMessage((message) => {
+          if (message.alert === 'scrollIntoViewCompleted') {
+            disposable.dispose(); // Cleanup listener
+            resolve();
+          }
+        });
+      });
+    
+      // Send scroll command
+      await panel.webview.postMessage({
+        command: "scrollToBlock",
+        blockId: bindingId,
+      });
+    
+      // Wait for scroll to finish
+      await scrollCompletion;
+    }
   }
 
   export async function terminateBlockHandler(

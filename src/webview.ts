@@ -109,6 +109,21 @@ export class WebviewManager {
   }
 
   /**
+   * Update the HTML content for a specific result block
+   */
+  updateElementInWebview(
+    panel: vscode.WebviewPanel,
+    elementId: string,
+    newContent: string
+  ) {
+    panel.webview.postMessage({
+      command: 'updateElement',
+      elementId,
+      content: newContent,
+    });
+  }
+
+  /**
    * Create the HTML content for this docPath's webview and update it.
    */
   updateContent(
@@ -360,6 +375,7 @@ export class WebviewManager {
 
     ${outputHtml}
 
+    <div style="height: 800px;"></div>
     <script>
         // Initialize API only if not already done
         const vscode = (function() {
@@ -498,6 +514,15 @@ export class WebviewManager {
             const blockContainer = document.getElementById(containerId);
             if (blockContainer) {
                 blockContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // Listen for scroll end
+                let isScrolling;
+                blockContainer.addEventListener('scroll', () => {
+                  clearTimeout(isScrolling);
+                  isScrolling = setTimeout(() => {
+                    // Notify extension after scroll finishes
+                    vscode.postMessage({ alert: 'scrollIntoViewCompleted' });
+                  }, 600); // Adjust here to match animation duration
+                });
             }
         }
     </script>

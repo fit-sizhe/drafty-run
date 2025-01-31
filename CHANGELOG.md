@@ -4,13 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- [ ] move `binding_utils` to `src/ops`
 - [ ] reorg codebase for 0.2
-- [ ] allow title appearance in result blocks
+- [x] allow title appearance in result blocks
 - [x] update props definitions
-- [ ] test props `removeOrphanedBlocks`
-- [ ] test props `defaultPath`
-- [ ] test props `savingRule`
+- [x] patch `scrollIntoView` logic
+- [x] test props `defaultPath`
+- [x] test props `savingRule`
 
 ## [0.1.6] - 2025-01-22
 
