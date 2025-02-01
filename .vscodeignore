@@ -10,6 +10,7 @@ node_modules/mocha/
 node_modules/typescript/
 .pre-commit-config.yaml
 
+tutorial/
 out/
 src/
 test/
