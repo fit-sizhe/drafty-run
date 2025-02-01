@@ -72,7 +72,7 @@ export function extractCodeBlocks(tokens: Token[]): CodeBlock[] {
     });
 }
 
-export function parseMarkdownContent(content: string): any[] {
+export function parseMarkdownContent(content: string): Token[] {
   const md = markdownit();
   return md.parse(content, {});
 }
