@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - [ ] reorg codebase for 0.2
+
+## [0.1.7] - 2025-02-01
+
 - [x] allow title appearance in result blocks
 - [x] update props definitions
 - [x] patch `scrollIntoView` logic
