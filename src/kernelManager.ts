@@ -1,8 +1,3 @@
-/**
- * This file is intended as a drop-in replacement for pythonRunner.ts,
- * but using the jmq.ts library (ZeroMQ + Jupyter wire protocol).
- */
-
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import { v4 as uuidv4 } from "uuid";
 import { CellOutput } from "./types";
@@ -46,10 +41,6 @@ interface ExecutionItem {
   reject: (err: unknown) => void;
 }
 
-/**
- * The KernelManager is a drop-in replacement for PythonRunner,
- * but uses jmq.js to talk to a Jupyter kernel via ZeroMQ.
- */
 export class KernelManager {
   private kernelMap = new Map<string, KernelInfo>();
   private executionQueue: Map<string, ExecutionItem[]> = new Map();

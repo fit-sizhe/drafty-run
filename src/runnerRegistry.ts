@@ -1,5 +1,4 @@
 import { CellOutput } from "./types";
-// import { PythonRunner } from './pythonRunner';
 import { KernelManager } from "./kernelManager";
 
 // Interface for language runners

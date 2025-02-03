@@ -31,7 +31,17 @@ export interface RichOutput extends BaseOutput {
   content: string;
 }
 
-export type CellOutput = TextOutput | ImageOutput | ErrorOutput | RichOutput;
+export interface WidgetDisplayData {
+  model_id: string;
+  view_id: string;
+}
+
+export interface WidgetOutput extends BaseOutput {
+  type: "widget";
+  data: WidgetDisplayData;
+}
+
+export type CellOutput = TextOutput | ImageOutput | ErrorOutput | RichOutput | WidgetOutput;
 
 export interface CodeBlock {
   content: string;
