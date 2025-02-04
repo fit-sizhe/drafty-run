@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
-import { CodeBlockExecution, CellOutput } from "./types";
-import { Environment } from "./env";
-import { parseDraftyId } from "./codeBlockParser";
+import { CodeBlockExecution, CellOutput } from "../types";
+import { Environment } from "../EnvironmentManager";
+import { parseDraftyId } from "../codeBlockParser";
 
 interface PanelInfo {
   panel: vscode.WebviewPanel;
@@ -534,9 +534,7 @@ export class WebviewManager {
     switch (output.type) {
       case "text":
         return `
-                    <div class="output text-output ${output.stream || ""}">
-                        ${this.escapeHtml(output.content)}
-                    </div>`;
+                    <div class="output text-output ${output.stream || ""}" style="white-space: pre;">${output.content}</div>`;
       case "image":
         return `
                     <div class="output image-output">
@@ -549,11 +547,7 @@ export class WebviewManager {
                         <div class="error-message">${this.escapeHtml(output.error)}</div>
                     </div>`;
       case "rich":
-        if (output.format === "html") {
-          return `<div class="output rich-output">${output.content}</div>`;
-        } else {
-          return `<div class="output rich-output">${this.escapeHtml(output.content)}</div>`;
-        }
+        return `<div class="output rich-output">${output.content}</div>`;
       default:
         return "";
     }

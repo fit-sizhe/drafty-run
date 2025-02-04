@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { extractCodeBlocks, parseDraftyId } from "./codeBlockParser";
-import { SessionState } from "./state";
+import { SessionState } from "./StateManager";
 import { CodeBlock, CodeBlockExecution } from "./types";
 import markdownit from 'markdown-it';
 

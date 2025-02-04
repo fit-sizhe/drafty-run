@@ -2,7 +2,7 @@ import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import { v4 as uuidv4 } from "uuid";
 import * as net from "net";
 import * as crypto from "crypto";
-import * as jmq from "../../jmq";
+import * as jmq from "../protocol/jmq";
 import { CellOutput } from "../../types";
 import { KernelConnection, ConnectionInfo, KernelSockets } from "../../kernel/base/KernelConnection";
 import { JupyterKernel } from "../../kernel/base/JupyterKernel";
@@ -86,11 +86,12 @@ export class PythonKernel extends JupyterKernel {
     await this.connection.connect(connectionInfo);
     await this.waitForKernelInfoReply();
 
+    // uncomment log below to debug kernel startup
     child.stdout.on("data", (data: Buffer) => {
-      console.log(`Kernel stdout: ${data.toString()}`);
+      // console.log(`Kernel stdout: ${data.toString()}`);
     });
     child.stderr.on("data", (data: Buffer) => {
-      console.error(`Kernel stderr: ${data.toString()}`);
+      // console.error(`Kernel stderr: ${data.toString()}`);
     });
     child.on("exit", (code, signal) => {
       console.log(`Kernel exited with code=${code} signal=${signal}`);

@@ -1,5 +1,5 @@
 import { CellOutput } from "./types";
-import { KernelManager } from "./kernelManager";
+import { KernelManager } from "./kernel/KernelManager";
 
 // Interface for language runners
 export interface ILanguageRunner {

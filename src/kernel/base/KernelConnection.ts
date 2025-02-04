@@ -1,4 +1,4 @@
-import * as jmq from "../../jmq";
+import * as jmq from "../protocol/jmq";
 
 export interface ConnectionInfo {
   shellPort: number;

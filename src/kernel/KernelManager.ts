@@ -1,6 +1,6 @@
 import * as path from "path";
-import { CellOutput } from "./types";
-import { PythonKernel } from "./kernel/implementations/PythonKernel";
+import { CellOutput } from "../types";
+import { PythonKernel } from "./implementations/PythonKernel";
 
 /**
  * This KernelManager class is a backward‑compatible wrapper that

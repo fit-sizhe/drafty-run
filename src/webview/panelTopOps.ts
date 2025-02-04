@@ -2,10 +2,10 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 
-import { StateManager } from "../state";
-import { truncatePath } from "../env";
-import { WebviewManager } from "../webview";
-import { EnvironmentManager } from "../env";
+import { StateManager } from "../StateManager";
+import { truncatePath } from "../EnvironmentManager";
+import { WebviewManager } from "./WebviewManager";
+import { EnvironmentManager } from "../EnvironmentManager";
 
 export namespace panelTopOps {
   // same as updatePanel in panelOps,

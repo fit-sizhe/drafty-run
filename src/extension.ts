@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
-import { WebviewManager } from "./webview";
-import { EnvironmentManager } from "./env";
-import { StateManager } from "./state";
-import { RunnerRegistry } from "./runnerRegistry";
+import { WebviewManager } from "./webview/WebviewManager";
+import { EnvironmentManager } from "./EnvironmentManager";
+import { StateManager } from "./StateManager";
+import { RunnerRegistry } from "./RunnerRegistry";
 import { MarkdownCodeLensProvider } from "./codeLensProvider";
 import { commands } from "./commands";
 

@@ -1,14 +1,14 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
-import { pathOps } from "./pathOps";
-import { panelOps } from "./panel/panelOps";
+import { pathOps } from "./webview/pathOps";
+import { panelOps } from "./webview/panelOps";
 
-import { CodeBlockExecution } from "./types"; // or wherever you keep types
-import { WebviewManager } from "./webview"; // adjust path
-import { SessionState, StateManager } from "./state"; // adjust path
-import { EnvironmentManager, truncatePath } from "./env"; // adjust path
-import { RunnerRegistry } from "./runnerRegistry"; // adjust path
+import { CodeBlockExecution } from "./types"; 
+import { WebviewManager } from "./webview/WebviewManager";
+import { SessionState, StateManager } from "./StateManager"; 
+import { EnvironmentManager, truncatePath } from "./EnvironmentManager";
+import { RunnerRegistry } from "./RunnerRegistry";
 import {
   extractCodeBlocks,
   parseMarkdownContent,

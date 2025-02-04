@@ -2,10 +2,10 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { panelTopOps } from "./panelTopOps";
 
-import { RunnerRegistry } from "../runnerRegistry";
-import { StateManager } from "../state";
-import { EnvironmentManager } from "../env";
-import { WebviewManager } from "../webview";
+import { RunnerRegistry } from "../RunnerRegistry";
+import { StateManager } from "../StateManager";
+import { EnvironmentManager } from "../EnvironmentManager";
+import { WebviewManager } from "./WebviewManager";
 
 export namespace panelOps {
   export function updatePanel(docPath: string) {
