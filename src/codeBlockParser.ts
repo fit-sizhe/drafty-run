@@ -86,6 +86,25 @@ export function extractCodeFromRange(
   return code.replace(/^```[\w\-]*\s*|```$/gm, "");
 }
 
+export function findMetaForRange(
+  document: vscode.TextDocument,
+  range: vscode.Range,
+): {
+  code: string, 
+  language: string | undefined, 
+  title: string | undefined
+} {
+  const text = document.getText(range)
+  const md = markdownit();
+  const tokens = md.parse(text, {});
+  const { language, title } = extractCodeBlocks(tokens)[0];
+
+  return {
+    code: text.replace(/^```[\w\-]*\s*|```$/gm, ""),
+    language, title 
+  };
+}
+
 export function findLanguageForRange(
   document: vscode.TextDocument,
   range: vscode.Range,

@@ -12,8 +12,7 @@ import { RunnerRegistry } from "./RunnerRegistry";
 import {
   extractCodeBlocks,
   parseMarkdownContent,
-  extractCodeFromRange,
-  findLanguageForRange,
+  findMetaForRange,
   parseDraftyId,
 } from "./codeBlockParser";
 import * as bind_utils from "./binding";
@@ -147,8 +146,10 @@ export namespace commands {
     const currentSession = stateManager.getSession(docPath) as SessionState;
 
     // extract info/code before any change
-    const code = extractCodeFromRange(editor.document, range);
-    const language = findLanguageForRange(editor.document, range);
+    // const code = extractCodeFromRange(editor.document, range);
+    // const language = findLanguageForRange(editor.document, range);
+    const {code, language, title} = findMetaForRange(editor.document, range);
+
 
     // Try to find a DRAFTY-ID in the code block lines
     // if nothing found, add the line
@@ -156,17 +157,20 @@ export namespace commands {
     let foundId = await bind_utils.ensureDraftyIdInCodeBlock(editor, range);
     // sync all block IDs from the doc
     // at this point, all code blocks should have a DRAFTY-ID
-    await bind_utils.syncAllBlockIds(editor.document, currentSession);
+    // the function also dispatch the command "reorder blocks"
+    await bind_utils.syncAllBlockIds(editor.document, currentSession, foundId);
 
+    const webviewManager = WebviewManager.getInstance();
     // Retrieve that block from session (it should exist after syncAllBlockIds).
     const blockInSession = currentSession.codeBlocks.get(foundId);
     if (!blockInSession) {
       // If for some reason it doesn't exist, create it now
       currentSession.codeBlocks.set(foundId, {
         content: code,
-        info: language,
+        info: language??"",
         bindingId: parseDraftyId(foundId),
         position: range.start.line, // optional
+        title: title??"",
         metadata: {
           status: "running",
           timestamp: Date.now(),
@@ -177,7 +181,8 @@ export namespace commands {
     } else {
       // Reuse old block, but update `content` + language
       blockInSession.content = code;
-      blockInSession.info = language;
+      blockInSession.info = language??"";
+      blockInSession.title = title??"";
       blockInSession.position = range.start.line; // optional
       blockInSession.metadata.status = "running";
       blockInSession.metadata.timestamp = Date.now();
@@ -190,7 +195,7 @@ export namespace commands {
       code,
       range.start.line,
       foundId,
-      language,
+      language??"",
     );
   }
 
@@ -243,8 +248,16 @@ export namespace commands {
       blockExecution.outputs = [];
     }
 
-    // Re-render before we start
-    panelOps.updatePanel(docPath);
+    // instead of re-rendering, we simply update status info
+    webviewManager.updateBlockStatus(
+      docPath, 
+      blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
+      "running", 
+      currentState.runCount,
+      true,
+      blockExecution.title,
+    );
+
 
     // Ask webview to scroll to this block
     const panel = webviewManager.getPanel(docPath);
@@ -266,7 +279,15 @@ export namespace commands {
           traceback: [],
         },
       ];
-      panelOps.updatePanel(docPath);
+      webviewManager.updateBlockStatus(
+        docPath, 
+        blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
+        blockExecution.metadata.status, 
+        currentState.runCount,
+        false,
+        blockExecution.title,
+        blockExecution.metadata.executionTime
+      );
       return;
     }
 
@@ -320,30 +341,17 @@ export namespace commands {
 
     blockExecution.metadata.executionTime =
       Date.now() - blockExecution.metadata.timestamp;
-    panelOps.updatePanel(docPath);
+
+    webviewManager.updateBlockStatus(
+      docPath, 
+      blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
+      blockExecution.metadata.status, 
+      currentState.runCount,
+      false,
+      blockExecution.title,
+      blockExecution.metadata.executionTime
+    );
     
-    // TEMPORARY PATCH: make sure short executions scroll into view
-    // TODO: replace "updatePanel" with fine-grained element updates
-    if (panel) {
-      // Create a promise to wait for scroll completion
-      const scrollCompletion = new Promise<void>((resolve) => {
-        const disposable = panel!.webview.onDidReceiveMessage((message) => {
-          if (message.alert === 'scrollIntoViewCompleted') {
-            disposable.dispose(); // Cleanup listener
-            resolve();
-          }
-        });
-      });
-    
-      // Send scroll command
-      await panel.webview.postMessage({
-        command: "scrollToBlock",
-        blockId: bindingId,
-      });
-    
-      // Wait for scroll to finish
-      await scrollCompletion;
-    }
   }
 
   export async function terminateBlockHandler(

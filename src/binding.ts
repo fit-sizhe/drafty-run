@@ -3,6 +3,7 @@ import { extractCodeBlocks, parseDraftyId } from "./codeBlockParser";
 import { SessionState } from "./StateManager";
 import { CodeBlock, CodeBlockExecution } from "./types";
 import markdownit from 'markdown-it';
+import { WebviewManager } from "./webview/WebviewManager";
 
 
 interface BellyGroupDocInfo {
@@ -66,7 +67,8 @@ export async function ensureDraftyIdInCodeBlock(
 
 export async function syncAllBlockIds(
     doc: vscode.TextDocument,
-    session: SessionState
+    session: SessionState,
+    focusedId: string
 ): Promise<void> {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     const removeOrphans = config.get<boolean>(ORPHAN_REMOVAL_KEY, false);
@@ -85,9 +87,17 @@ export async function syncAllBlockIds(
         removeOrphans
     );
 
+    const oldOrder = getOrderedBlockIds(session);
+
     // Update session state
     session.codeBlocks = updatedBlocks;
     session.bellyGroups = bellyGroups.map((b)=> b.belly);
+
+    const newOrder = getOrderedBlockIds(session);
+
+    if (newOrder != oldOrder) {
+        WebviewManager.getInstance().reorderBlocks(doc.uri.fsPath, newOrder, focusedId, removeOrphans);
+    }
 }
 
 // Helper functions with clear responsibilities
@@ -176,12 +186,14 @@ function reorganizeSessionBlocks(
     // 3. Add new blocks from document that weren't in session
     for (const docId of docBlockMap.keys()) {
         if (!updatedBlocks.has(docId)) {
-            const newBlock: CodeBlockExecution = {
-                ...docBlockMap.get(docId),
-                content: "",
-                info: "",
+            const newBlock = docBlockMap.get(docId)!;
+            const newBlockExec: CodeBlockExecution = {
+                content: newBlock.content??"",
+                info: newBlock.info,
+                language: newBlock.language,
                 bindingId: parseDraftyId(docId),
-                position: -1, // Will be updated during execution
+                position: newBlock.position,
+                title: newBlock.title,
                 metadata: {
                     status: "pending",
                     timestamp: Date.now(),
@@ -189,9 +201,34 @@ function reorganizeSessionBlocks(
                 },
                 outputs: [],
             };
-            updatedBlocks.set(docId, newBlock);
+            updatedBlocks.set(docId, newBlockExec);
         }
     }
 
     return { updatedBlocks };
 }
+
+function getOrderedBlockIds(session: SessionState): string[] {
+    // For each belly in session.bellyGroups,
+    // find all blocks that have that belly. Sort them by tail. 
+    const result: string[] = [];
+    const codeBlocks = session.codeBlocks;
+    const bellyGroups = session.bellyGroups??[];
+  
+    for (const belly of bellyGroups) {
+      // Gather blocks with that belly
+      const inThisBelly = [...codeBlocks.values()]
+        .filter(cb => cb.bindingId?.belly === belly)
+        .sort((a, b) => {
+          const aTail = a.bindingId?.tail ?? 0;
+          const bTail = b.bindingId?.tail ?? 0;
+          return aTail - bTail;
+        });
+      
+      // push them in sorted order
+      for (const block of inThisBelly) {
+        result.push(block.metadata.bindingId!);
+      }
+    }
+    return result;
+  }

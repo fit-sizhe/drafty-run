@@ -55,6 +55,10 @@ export namespace panelOps {
     }
 
     switch (message.command) {
+      case "debug":{
+        console.log(message);
+        break;
+      }
       case "changeEnv": {
         if (pythonManager) {
           pythonManager.disposeRunner(docPath);
@@ -71,7 +75,6 @@ export namespace panelOps {
         const curBin = envManager.getSelectedPath(docPath);
         vscode.window.showInformationMessage(`Refreshing Environments...`);
         await envManager.refresh(docPath);
-        updatePanel(docPath);
         const newBin = envManager.getSelectedPath(docPath);
         if (curBin !== newBin && pythonManager) {
           pythonManager.disposeRunner(docPath);
@@ -86,7 +89,6 @@ export namespace panelOps {
 
       case "changeMaxHeight":
         webviewManager.setMaxResultHeight(docPath, message.value);
-        updatePanel(docPath);
         break;
 
       case "loadResults":
