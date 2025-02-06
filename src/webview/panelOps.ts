@@ -76,6 +76,12 @@ export namespace panelOps {
         vscode.window.showInformationMessage(`Refreshing Environments...`);
         await envManager.refresh(docPath);
         const newBin = envManager.getSelectedPath(docPath);
+        // trigger gui updates here
+        await webviewManager.getPanel(docPath)?.webview.postMessage({
+          command: "updateEnvOptions",
+          envs: envManager.getEnvironments(),
+          selected: newBin
+        })
         if (curBin !== newBin && pythonManager) {
           pythonManager.disposeRunner(docPath);
           pythonManager.startProcessForDoc(docPath, newBin);

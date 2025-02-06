@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
+import * as path from "path";
 
-export namespace pathOps {
+export namespace pathUtils {
 
   export function getDocPath(
     editor: vscode.TextEditor | undefined,

@@ -31,14 +31,11 @@ export interface RichOutput extends BaseOutput {
   content: string;
 }
 
-export interface WidgetDisplayData {
-  model_id: string;
-  view_id: string;
-}
-
+// types for updates to interactive plot
 export interface WidgetOutput extends BaseOutput {
   type: "widget";
-  data: WidgetDisplayData;
+  content: string;
+  stream: "stdout" | "stderr";
 }
 
 export type CellOutput = TextOutput | ImageOutput | ErrorOutput | RichOutput | WidgetOutput;

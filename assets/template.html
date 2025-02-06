@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body {
+      padding: 20px;
+      padding-bottom: 800px;
+      font-family: var(--vscode-editor-font-family);
+      line-height: 1.5;
+      color: var(--vscode-editor-foreground);
+      background-color: var(--vscode-editor-background);
+    }
+    .panel-top {
+      display: flex;
+      flex-direction: column;
+      align-items: left;
+      margin-bottom: 0.2em;
+    }
+    .panel-row {
+      max-width: 600px;
+      min-width: 450px;
+      display: flex;
+      margin-bottom: 0.6em;
+    }
+    .panel-row label {
+      margin-right: 0.3em;
+    }
+    select,
+    input,
+    button {
+      font-size: 0.9rem;
+    }
+    .block-container {
+      margin-bottom: 20px;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .block-header {
+      padding: 5px 10px;
+      background: var(--vscode-editor-lineHighlightBackground);
+      border-bottom: 1px solid var(--vscode-panel-border);
+      display: flex;
+      justify-content: space-between;
+    }
+    .block-header .status {
+      text-transform: capitalize;
+    }
+    .block-header .time {
+      color: var(--vscode-descriptionForeground);
+    }
+    .title {
+      color: var(--vscode-descriptionForeground);
+    }
+    .block-outputs {
+      padding: 10px;
+    }
+    .output {
+      margin-bottom: 10px;
+      white-space: pre;
+    }
+    .text-output {
+      text-align: left;
+      font-family: var(--vscode-editor-font-family);
+    }
+    .text-output.stderr {
+      color: var(--vscode-errorForeground);
+    }
+    .image-output img {
+      max-width: 100%;
+      height: auto;
+    }
+    .live-plot {
+      display: block;
+      margin-left: 0;
+    }
+    .error-output {
+      color: var(--vscode-errorForeground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .rich-output {
+      background-color: var(--vscode-editor-background);
+    }
+    .status-running {
+      border-color: var(--vscode-progressBar-background);
+    }
+    .status-success {
+      border-color: var(--vscode-testing-iconPassed);
+    }
+    .status-error {
+      border-color: var(--vscode-testing-iconFailed);
+    }
+    .vscode-button {
+      cursor: pointer;
+      flex: 1;
+      margin-right: 0.5em;
+      padding: 0.4em 0.8em;
+      border: 1px solid var(--vscode-button-border);
+      border-radius: 3px;
+      background-color: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      font-size: 0.8rem;
+    }
+    .vscode-button:hover {
+      background-color: var(--vscode-button-hoverBackground);
+    }
+    input[type="text"],
+    input[type="number"],
+    select {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.8rem;
+      flex: 1;
+      color: var(--vscode-input-foreground);
+      background-color: var(--vscode-input-background);
+      border: 1px solid var(--vscode-button-background);
+      padding: 4px 6px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel-top">
+    <div class="panel-row">
+      <label for="envSelect"><strong>Python:</strong></label>
+      <!-- Insert environment <option> elements here -->
+      <select id="envSelect">{{ENV_OPTIONS}}</select>
+
+      <button id="refreshButton" class="vscode-button" style="max-width: 200px; margin-left: 0.5em;">Refresh</button>
+    </div>
+
+    <div class="panel-row">
+      <label for="maxHeightInput"><strong>Max result height(px):</strong></label>
+      <input type="number" id="maxHeightInput" min="50" step="50" value="{{MAX_RESULT_HEIGHT}}" />
+    </div>
+
+    <div class="panel-row">
+      <button id="loadResultsButton" class="vscode-button">Load</button>
+      <button id="saveAsButton" class="vscode-button">Save As</button>
+      <button id="saveButton" class="vscode-button">Save</button>
+      <button id="clearButton" class="vscode-button">Clear</button>
+    </div>
+
+    <div class="panel-row">
+      <label><strong>Loaded JSON:</strong></label>
+      <input type="text" id="loadedResultsPath" readonly style="background: none;" />
+    </div>
+  </div>
+
+  <!-- Insert all result blocks here -->
+  {{OUTPUT_BLOCKS}}
+
+  <script src="{{SCRIPT_URI}}"></script>
+</body>
+</html>

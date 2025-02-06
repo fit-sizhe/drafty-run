@@ -461,6 +461,10 @@ export class WebviewManager {
                   updateBlockStatus(message.containerId, message.status, message.runNum, message.clearContent, message.title, message.executionTime);
                   break;
 
+                case "updateEnvOptions":
+                  updateEnvOptions(message.envs, message.selected);
+                  break;
+
                 case 'updateLoadedPath':
                   const loadedPathBox = document.getElementById('loadedResultsPath');
                   if (loadedPathBox) {
@@ -617,6 +621,23 @@ export class WebviewManager {
             if (outputElement && clearContent){
               outputElement.innerHTML = "";
             }
+        }
+
+        function updateEnvOptions(envs, selected) {
+          const selector = document.getElementById("envSelect");
+          selector.innerHTML = "";
+          const options = envs
+            .map((env) => {
+              const selectedAttr = env.path === selected ? true : false;
+              const option = document.createElement("option");
+              option.value = env.path;
+              option.selected = selectedAttr;
+              option.innerText = env.label;
+              return option;
+            });
+          for (const opt of options){
+            selector.appendChild(opt);
+          }
         }
 
         function updateBlockOutput(blockId, output) {

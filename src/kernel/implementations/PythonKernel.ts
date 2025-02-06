@@ -231,6 +231,7 @@ export class PythonKernel extends JupyterKernel {
       }
       const msgType = msg.header.msg_type;
       const content = msg.content || {};
+      // TODO: add logic for handling extension-kernel comm for interactive plotting
       switch (msgType) {
         case "stream":
           onPartialOutput({

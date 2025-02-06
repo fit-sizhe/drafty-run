@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
-import { pathOps } from "./webview/pathOps";
+import { pathUtils } from "./pathUtils";
 import { panelOps } from "./webview/panelOps";
 
 import { CodeBlockExecution } from "./types"; 
@@ -128,7 +128,7 @@ export namespace commands {
       return;
     }
 
-    const docPath = pathOps.getDocPath(editor);
+    const docPath = pathUtils.getDocPath(editor);
     if (!docPath) {
       vscode.window.showErrorMessage("Please open a Markdown file first.");
       return;
@@ -146,8 +146,7 @@ export namespace commands {
     const currentSession = stateManager.getSession(docPath) as SessionState;
 
     // extract info/code before any change
-    // const code = extractCodeFromRange(editor.document, range);
-    // const language = findLanguageForRange(editor.document, range);
+    // TODO: separate code and directive extraction
     const {code, language, title} = findMetaForRange(editor.document, range);
 
 
@@ -254,7 +253,7 @@ export namespace commands {
       blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
       "running", 
       currentState.runCount,
-      true,
+      true, // clear content
       blockExecution.title,
     );
 
@@ -284,7 +283,7 @@ export namespace commands {
         blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
         blockExecution.metadata.status, 
         currentState.runCount,
-        false,
+        false, // do not clear
         blockExecution.title,
         blockExecution.metadata.executionTime
       );
@@ -347,7 +346,7 @@ export namespace commands {
       blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
       blockExecution.metadata.status, 
       currentState.runCount,
-      false,
+      false, // do not clear
       blockExecution.title,
       blockExecution.metadata.executionTime
     );
@@ -363,7 +362,7 @@ export namespace commands {
       return;
     }
 
-    const docPath = pathOps.getDocPath(editor);
+    const docPath = pathUtils.getDocPath(editor);
     if (!docPath) {
       vscode.window.showErrorMessage("Please open a Markdown file first.");
       return;
