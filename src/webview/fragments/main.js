@@ -66,6 +66,7 @@ saveButton?.addEventListener("click", () => {
 });
 
 // Listen for commands from extension
+// TODO: add listener to "updatePlot"
 window.addEventListener("message", (event) => {
   const message = event.data;
   switch (message.command) {

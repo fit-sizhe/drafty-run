@@ -325,6 +325,7 @@ export namespace commands {
         onPartialOutput,
       );
       blockExecution.metadata.status = "success";
+      // TODO: if directives!= undefined, build comm btw webview element<->kernel for interactive GUI
     } catch (error) {
       const errStr = error instanceof Error ? error.message : String(error);
       blockExecution.outputs = [

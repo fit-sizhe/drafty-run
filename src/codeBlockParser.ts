@@ -14,6 +14,21 @@ interface DraftyIdParts {
   tail: number; // e.g. 4
 }
 
+type Input = {
+  param: string
+}
+
+type Slider = {
+  param: string,
+  min: number,
+  max: number
+}
+
+interface Directives {
+  execute: string,
+  controls: (Input | Slider)[]
+}
+
 export function parseDraftyId(str: string): DraftyIdParts | undefined {
   let match: RegExpExecArray | null;
   if(!str.includes('|')){
@@ -40,6 +55,11 @@ export function parseBellyTail(bindingId: string): { belly: string; tail: number
     return { belly: "000", tail: 0 };
   }
   return { belly: parsed.belly, tail: parsed.tail };
+}
+
+// TODO: parse special directives in code blocks for plotting interactive plots
+export function parseDirectives(code: string): Directives | undefined {
+  return;
 }
 
 export function extractCodeBlocks(tokens: Token[]): CodeBlock[] {
