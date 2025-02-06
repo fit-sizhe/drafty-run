@@ -20,11 +20,29 @@ async function main() {
       esbuildProblemMatcherPlugin
     ]
   });
+
+  const webviewConfig = await esbuild.context({
+    entryPoints: ['src/webview/fragments/main.js'],
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    outfile: 'dist/main.js',
+    logLevel: 'silent',
+    plugins: [esbuildProblemMatcherPlugin]
+  });
+
   if (watch) {
     await ctx.watch();
+    await webviewConfig.watch();
   } else {
     await ctx.rebuild();
     await ctx.dispose();
+
+    await webviewConfig.rebuild();
+    await webviewConfig.dispose();
   }
 }
 
