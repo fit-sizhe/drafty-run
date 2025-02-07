@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { extractCodeBlocks, parseDraftyId } from "./codeBlockParser";
 import { SessionState } from "./StateManager";
 import { CodeBlock, CodeBlockExecution } from "./types";
-import markdownit from 'markdown-it';
 import { WebviewManager } from "./webview/WebviewManager";
 
 
@@ -45,7 +44,7 @@ export async function ensureDraftyIdInCodeBlock(
 ): Promise<string> {
     const document = editor.document;
     const code = document.getText(range);
-    const block = extractCodeBlocksFromText(code)[0];
+    const block = extractCodeBlocks(code)[0];
 
     // Use the parser's extracted binding ID if available
     const existingId = block?.bindingId?.head ? 
@@ -74,7 +73,7 @@ export async function syncAllBlockIds(
     const removeOrphans = config.get<boolean>(ORPHAN_REMOVAL_KEY, false);
 
     // Extract code blocks from document using our parser
-    const docBlocks = extractCodeBlocksFromDocument(doc);
+    const docBlocks = extractCodeBlocks(doc.getText());
     
     // Process document structure
     const { bellyGroups, docBlockMap } = processDocumentBlocks(docBlocks);
@@ -101,15 +100,6 @@ export async function syncAllBlockIds(
 }
 
 // Helper functions with clear responsibilities
-function extractCodeBlocksFromText(text: string): CodeBlock[] {
-    const md = markdownit();
-    return extractCodeBlocks(md.parse(text, {}));
-}
-
-function extractCodeBlocksFromDocument(doc: vscode.TextDocument): CodeBlock[] {
-    return extractCodeBlocksFromText(doc.getText());
-}
-
 function processDocumentBlocks(blocks: CodeBlock[]) {
     const bellyGroups: BellyGroupDocInfo[] = [];
     const seenBellies = new Set<string>();
