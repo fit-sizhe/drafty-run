@@ -2,10 +2,10 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 
-import { StateManager } from "../StateManager";
-import { truncatePath } from "../EnvironmentManager";
+import { StateManager } from "../managers/StateManager";
+import { truncatePath } from "../managers/EnvironmentManager";
 import { WebviewManager } from "./WebviewManager";
-import { EnvironmentManager } from "../EnvironmentManager";
+import { EnvironmentManager } from "../managers/EnvironmentManager";
 
 export namespace panelTopOps {
   // same as updatePanel in panelOps,
@@ -24,7 +24,7 @@ export namespace panelTopOps {
       session.codeBlocks,
       session.bellyGroups??[],
       envManager.getEnvironments(),
-      envManager.getSelectedPath(docPath),
+      envManager.getSelectedBin(docPath),
     );
   }
 

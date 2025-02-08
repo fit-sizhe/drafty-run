@@ -1,4 +1,4 @@
-import { CellOutput } from "../types";
+import { CellOutput, CodeBlockExecution } from "../types";
 import { PyKernelServer } from "./implementations/PyKernelServer";
 import * as vscode from "vscode";
 
@@ -7,26 +7,25 @@ export interface ILanguageServer {
   executeCode(
     docPath: string,
     code: string,
-    envPath: string,
-    blockId: string,
     onPartialOutput?: (output: CellOutput) => void,
   ): Promise<{ outputs: CellOutput[] }>;
-  // clear global status of runner class
+  // "soft"? clear global status of runner class
   clearState(docPath: string): void;
-  disposeRunner(docPath: string): void;
+  // remove server
+  disposeServer(docPath: string): void;
   // start a background process for specific doc
   startProcessForDoc(
     docPath: string,
-    envPath: string,
-    onDataCallback?: (output: CellOutput) => void): void;
-  terminateExecution?(docPath: string): void; // Optional for backward compatibility
-  runSingleBlock?(
-        context: vscode.ExtensionContext,
+    envPath: string): void;
+  // interrupt execution, not kill
+  terminateExecution(docPath: string): void;
+  // relay execution result to webview 
+  // this is where "onPartialOutput" gets defined
+  runSingleBlock(
         docPath: string,
         code: string,
-        position: number,
-        bindingId: string,
-        language: string): Promise<void>; // Optional for backward compatibility
+        blockState: CodeBlockExecution,
+        panel?: vscode.WebviewPanel): Promise<void>; // being called in commands.ts
 }
 
 // Registry for language servers

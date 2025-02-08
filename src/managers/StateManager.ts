@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { CodeBlockExecution } from "./types";
+import { CodeBlockExecution } from "../types";
 
 const CONFIG_SECTION = "drafty";
 const DEFAULT_PATH_KEY = "defaultPath";

@@ -3,8 +3,8 @@ import * as vscode from "vscode";
 import { panelTopOps } from "./panelTopOps";
 
 import { KernelServerRegistry } from "../kernel/KernelServerRegistry";
-import { StateManager } from "../StateManager";
-import { EnvironmentManager } from "../EnvironmentManager";
+import { StateManager } from "../managers/StateManager";
+import { EnvironmentManager } from "../managers/EnvironmentManager";
 import { WebviewManager } from "./WebviewManager";
 
 export namespace panelOps {
@@ -22,7 +22,7 @@ export namespace panelOps {
       session.codeBlocks,
       session.bellyGroups??[],
       envManager.getEnvironments(),
-      envManager.getSelectedPath(docPath),
+      envManager.getSelectedBin(docPath),
     );
   }
 
@@ -30,7 +30,7 @@ export namespace panelOps {
     console.log(`Panel for docPath: ${docPath} disposed.`);
 
     const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
-    pythonAdapter?.disposeRunner(docPath);
+    pythonAdapter?.disposeServer(docPath);
 
     StateManager.getInstance().removeSession(docPath);
     console.log("Runner and session removed for doc:", docPath);
@@ -61,7 +61,7 @@ export namespace panelOps {
       }
       case "changeEnv": {
         if (pythonManager) {
-          pythonManager.disposeRunner(docPath);
+          pythonManager.disposeServer(docPath);
           pythonManager.startProcessForDoc(docPath, message.pythonPath);
         }
         envManager.setSelectedPath(message.pythonPath, docPath);
@@ -72,10 +72,10 @@ export namespace panelOps {
       }
 
       case "refreshEnv": {
-        const curBin = envManager.getSelectedPath(docPath);
+        const curBin = envManager.getSelectedBin(docPath);
         vscode.window.showInformationMessage(`Refreshing Environments...`);
         await envManager.refresh(docPath);
-        const newBin = envManager.getSelectedPath(docPath);
+        const newBin = envManager.getSelectedBin(docPath);
         // trigger gui updates here
         await webviewManager.getPanel(docPath)?.webview.postMessage({
           command: "updateEnvOptions",
@@ -83,7 +83,7 @@ export namespace panelOps {
           selected: newBin
         })
         if (curBin !== newBin && pythonManager) {
-          pythonManager.disposeRunner(docPath);
+          pythonManager.disposeServer(docPath);
           pythonManager.startProcessForDoc(docPath, newBin);
           envManager.setSelectedPath(newBin, docPath);
           vscode.window.showInformationMessage(`Switched to: ${newBin}`);

@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
-import { pathUtils } from "./pathUtils";
+import { pathUtils } from "./utils/pathUtils";
 import { panelOps } from "./webview/panelOps";
 
 import { CodeBlockExecution } from "./types"; 
 import { WebviewManager } from "./webview/WebviewManager";
-import { SessionState, StateManager } from "./StateManager"; 
-import { EnvironmentManager, truncatePath } from "./EnvironmentManager";
+import { SessionState, StateManager } from "./managers/StateManager"; 
+import { EnvironmentManager, truncatePath } from "./managers/EnvironmentManager";
 import { KernelServerRegistry } from "./kernel/KernelServerRegistry";
 import {
   extractCodeBlocks,
@@ -15,7 +15,7 @@ import {
   findMetaForRange,
 } from "./parser/block";
 import { parseDraftyId } from "./parser/draftyid";
-import * as bind_utils from "./webview/draftyIdUtils";
+import * as draftyid_utils from "./utils/draftyIdUtils";
 
 export namespace commands {
   export async function startSessionHandler(context: vscode.ExtensionContext) {
@@ -58,7 +58,7 @@ export namespace commands {
     const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
 
     if (pythonAdapter) {
-      pythonAdapter.disposeRunner(mdFullPath);
+      pythonAdapter.disposeServer(mdFullPath);
       pythonAdapter.startProcessForDoc(mdFullPath, pythonPath);
     }
     envManager.setSelectedPath(pythonPath, mdFullPath);
@@ -123,6 +123,7 @@ export namespace commands {
     context: vscode.ExtensionContext,
     range: vscode.Range,
   ) {
+    // 1. Environment Checks
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
       return;
@@ -143,72 +144,8 @@ export namespace commands {
       return;
     }
 
-    const currentSession = stateManager.getSession(docPath) as SessionState;
-
-    // extract info/code before any change
-    // TODO: separate code and directive extraction
-    const {code, language, title} = findMetaForRange(editor.document, range);
-
-
-    // Try to find a DRAFTY-ID in the code block lines
-    // if nothing found, add the line
-    // range is invalidated after this line
-    let foundId = await bind_utils.ensureDraftyIdInCodeBlock(editor, range);
-    // sync all block IDs from the doc
-    // at this point, all code blocks should have a DRAFTY-ID
-    // the function also dispatch the command "reorder blocks"
-    await bind_utils.syncAllDraftyIds(editor.document, currentSession, foundId);
-
-    // Retrieve that block from session (it should exist after syncAllDraftyIds).
-    const blockInSession = currentSession.codeBlocks.get(foundId);
-    if (!blockInSession) {
-      // If for some reason it doesn't exist, create it now
-      currentSession.codeBlocks.set(foundId, {
-        content: code,
-        info: language??"",
-        bindingId: parseDraftyId(foundId),
-        position: range.start.line, // optional
-        title: title??"",
-        metadata: {
-          status: "running",
-          timestamp: Date.now(),
-          bindingId: foundId,
-        },
-        outputs: [],
-      });
-    } else {
-      // Reuse old block, but update `content` + language
-      blockInSession.content = code;
-      blockInSession.info = language??"";
-      blockInSession.title = title??"";
-      blockInSession.position = range.start.line; // optional
-      blockInSession.metadata.status = "running";
-      blockInSession.metadata.timestamp = Date.now();
-    }
-
-
-    await runSingleCodeBlock(
-      context,
-      docPath,
-      code,
-      range.start.line,
-      foundId,
-      language??"",
-    );
-  }
-
-  async function runSingleCodeBlock(
-    context: vscode.ExtensionContext,
-    docPath: string,
-    code: string,
-    position: number,
-    bindingId: string,
-    language: string,
-  ) {
+    // 2. Open Corresponding Webview
     const webviewManager = WebviewManager.getInstance();
-    const envManager = EnvironmentManager.getInstance();
-    const stateManager = StateManager.getInstance();
-
     await webviewManager.ensurePanel(
       context,
       docPath,
@@ -217,117 +154,92 @@ export namespace commands {
     );
     webviewManager.revealPanel(docPath);
 
-    const currentState = stateManager.getSession(docPath);
-    if (!currentState) {
-      vscode.window.showErrorMessage(`No session found for file: ${docPath}`);
-      return;
-    }
+    // 3. Extract Code, Metadata, and Directives Before Changes
+    // TODO: separate code and directive extraction
+    const {code, language, title} = findMetaForRange(editor.document, range);
 
-    currentState.runCount++;
-    let blockExecution = currentState.codeBlocks.get(bindingId);
-    if (!blockExecution) {
-      blockExecution = {
+
+    // 4. Ensure Drafty ID
+    const currentSession = stateManager.getSession(docPath) as SessionState;
+    // if nothing found, add the line
+    // range is invalidated after this line
+    let foundId = await draftyid_utils.ensureDraftyIdInCodeBlock(editor, range);
+    // sync all block IDs from the doc
+    // at this point, all code blocks should have a DRAFTY-ID
+    // the function also dispatch the command "reorder blocks"
+    await draftyid_utils.syncAllDraftyIds(editor.document, currentSession, foundId);
+
+    // 5. Update Block Status
+    currentSession.runCount++;
+    // retrieve that block from session (it should exist after syncAllDraftyIds).
+    let blockInSession = currentSession.codeBlocks.get(foundId);
+    if (!blockInSession) {
+      // if for some reason it doesn't exist, create it now
+      blockInSession = {
         content: code,
-        info: language,
-        position,
-        bindingId: parseDraftyId(bindingId),
+        info: language??"",
+        language: language??"",
+        bindingId: parseDraftyId(foundId),
+        position: range.start.line, // optional
+        title: title??"",
         metadata: {
           status: "running",
           timestamp: Date.now(),
-          runNumber: currentState.runCount,
-          bindingId: bindingId,
+          bindingId: foundId,
+          runNumber: currentSession.runCount,
         },
         outputs: [],
       };
-      currentState.codeBlocks.set(bindingId, blockExecution);
+      currentSession.codeBlocks.set(foundId, blockInSession);
     } else {
-      blockExecution.metadata.runNumber = currentState.runCount;
-      blockExecution.metadata.status = "running";
-      blockExecution.outputs = [];
+      // reuse old block, but update `content` + language
+      blockInSession.content = code;
+      blockInSession.info = language??"";
+      blockInSession.language = language??"";
+      blockInSession.title = title??"";
+      blockInSession.position = range.start.line; // optional
+      blockInSession.metadata.status = "running";
+      blockInSession.metadata.timestamp = Date.now();
+      blockInSession.metadata.bindingId = foundId;
+      blockInSession.metadata.runNumber = currentSession.runCount;
     }
 
     // instead of re-rendering, we simply update status info
     webviewManager.updateBlockStatus(
       docPath, 
-      blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
+      blockInSession.metadata.bindingId!, 
       "running", 
-      currentState.runCount,
+      currentSession.runCount,
       true, // clear content
-      blockExecution.title,
+      blockInSession.title,
     );
 
-
-    // Ask webview to scroll to this block
+    // ask webview to scroll to this block
     const panel = webviewManager.getPanel(docPath);
     panel?.webview.postMessage({
       command: "scrollToBlock",
-      blockId: bindingId,
+      blockId: foundId,
     });
 
-    const runner = KernelServerRegistry.getInstance().getRunner(
-      language.toLowerCase(),
+    // 6. Get Kernel Server to Run Code
+    const server = KernelServerRegistry.getInstance().getRunner(
+      language??"".toLowerCase(),
     );
-    if (!runner) {
-      blockExecution.metadata.status = "error";
-      blockExecution.outputs = [
-        {
-          type: "error",
-          timestamp: Date.now(),
-          error: `No runner available for language: ${language}`,
-          traceback: [],
-        },
-      ];
-      webviewManager.updateBlockStatus(
-        docPath, 
-        blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
-        blockExecution.metadata.status, 
-        currentState.runCount,
-        false, // do not clear
-        blockExecution.title,
-        blockExecution.metadata.executionTime
-      );
+    if (!server) {
+      vscode.window.showErrorMessage(`No Kernel Server Found for ${language}.`);
       return;
     }
 
-    const onPartialOutput = (partialOutput: any) => {
-      const currSession = stateManager.getSession(docPath);
-      if (!currSession) return;
-      const block = currSession.codeBlocks.get(bindingId);
-      if (!block) return;
-
-      if (partialOutput.type === "image") {
-        // Overwrite old images from the same run
-        const oldImageIndex = block.outputs.findIndex(
-          (o) => o.type === "image",
-        );
-        if (oldImageIndex !== -1) {
-          block.outputs[oldImageIndex] = partialOutput;
-        } else {
-          block.outputs.push(partialOutput);
-        }
-      } else {
-        block.outputs.push(partialOutput);
-      }
-      panel?.webview.postMessage({
-        command: "partialOutput",
-        blockId: bindingId,
-        output: partialOutput,
-      });
-    };
-
-    try {
-      await runner.executeCode(
-        docPath,
-        code,
-        envManager.getSelectedPath(docPath),
-        bindingId,
-        onPartialOutput,
-      );
-      blockExecution.metadata.status = "success";
+    try{
+      await server.runSingleBlock(
+        docPath, 
+        code, 
+        blockInSession,webviewManager.getPanel(docPath));
+      blockInSession.metadata.status = "success";
       // TODO: if directives!= undefined, build comm btw webview element<->kernel for interactive GUI
-    } catch (error) {
+    } catch(error) {
       const errStr = error instanceof Error ? error.message : String(error);
-      blockExecution.outputs = [
+      blockInSession.outputs = [
         {
           type: "error",
           timestamp: Date.now(),
@@ -335,22 +247,20 @@ export namespace commands {
           traceback: [],
         },
       ];
-      blockExecution.metadata.status = "error";
+      blockInSession.metadata.status = "error";
     }
-
-    blockExecution.metadata.executionTime =
-      Date.now() - blockExecution.metadata.timestamp;
+    blockInSession.metadata.executionTime =
+      Date.now() - blockInSession.metadata.timestamp;
 
     webviewManager.updateBlockStatus(
       docPath, 
-      blockExecution.metadata.bindingId??"block-"+blockExecution.position, 
-      blockExecution.metadata.status, 
-      currentState.runCount,
+      blockInSession.metadata.bindingId!,
+      blockInSession.metadata.status, 
+      currentSession.runCount,
       false, // do not clear
-      blockExecution.title,
-      blockExecution.metadata.executionTime
+      blockInSession.title,
+      blockInSession.metadata.executionTime
     );
-    
   }
 
   export async function terminateBlockHandler(

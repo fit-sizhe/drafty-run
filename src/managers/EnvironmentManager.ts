@@ -71,7 +71,7 @@ export class EnvironmentManager {
       // if binary for current doc no longer exists, 
       // set it to the first found path
       if (docPath) {
-        const curBin = this.getSelectedPath(docPath);
+        const curBin = this.getSelectedBin(docPath);
         if (!binPaths.includes(curBin)) {
           this.setSelectedPath(binPaths[0], docPath);
         }
@@ -83,7 +83,7 @@ export class EnvironmentManager {
     return this.environments;
   }
 
-  getSelectedPath(docPath?: string): string {
+  getSelectedBin(docPath?: string): string {
     if (docPath) {
       let binPath = this.docBins.get(docPath);
       if (binPath) return binPath;

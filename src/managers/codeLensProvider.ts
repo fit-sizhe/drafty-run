@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { parseMarkdownContent } from "./parser/block";
+import { parseMarkdownContent } from "../parser/block";
 
 export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
   public provideCodeLenses(
@@ -12,7 +12,7 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
 
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i];
-      if (token.type === "fence" && token.map) {
+      if (token.type === "fence" && token.map && token.info === "python") {
         const [startLine, endLine] = token.map; // endLine is exclusive
         const range = new vscode.Range(startLine, 0, endLine - 1, 0);
 

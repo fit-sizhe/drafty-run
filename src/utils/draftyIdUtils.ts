@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import { extractCodeBlocks } from "../parser/block";
 import { parseDraftyId } from "../parser/draftyid";
-import { SessionState } from "../StateManager";
+import { SessionState } from "../managers/StateManager";
 import { CodeBlock, CodeBlockExecution } from "../types";
-import { WebviewManager } from "./WebviewManager";
+import { WebviewManager } from "../webview/WebviewManager";
 
 
 interface BellyGroupDocInfo {

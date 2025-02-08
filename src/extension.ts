@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import { WebviewManager } from "./webview/WebviewManager";
-import { EnvironmentManager } from "./EnvironmentManager";
-import { StateManager } from "./StateManager";
+import { EnvironmentManager } from "./managers/EnvironmentManager";
+import { StateManager } from "./managers/StateManager";
 import { KernelServerRegistry } from "./kernel/KernelServerRegistry";
-import { MarkdownCodeLensProvider } from "./codeLensProvider";
+import { MarkdownCodeLensProvider } from "./managers/codeLensProvider";
 import { commands } from "./commands";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -44,7 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
         const docPath = doc.uri.fsPath;
         // Remove runner
         const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
-        pythonAdapter?.disposeRunner(docPath);
+        pythonAdapter?.disposeServer(docPath);
         // Remove session from StateManager
         StateManager.getInstance().removeSession(docPath);
 

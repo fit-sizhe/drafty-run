@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import { CodeBlockExecution, CellOutput } from "../types";
-import { Environment } from "../EnvironmentManager";
+import { Environment } from "../managers/EnvironmentManager";
 import { parseDraftyId } from "../parser/draftyid";
 
 interface PanelInfo {
