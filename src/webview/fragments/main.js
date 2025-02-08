@@ -252,7 +252,8 @@ function updateBlockStatus(
   const runLabel = runNum ? "Output [" + runNum + "]" : "Output [?]";
   let resultTitle;
   if (title) {
-    resultTitle = title + " (" + blockId.split("-")[3] + ")";
+    let idparts = blockId.split("-")
+    resultTitle = title + " (" + idparts[2] + "-" + idparts[3] + ")";
   } else resultTitle = blockId;
 
   [...blockElement.classList].forEach((cls) => {

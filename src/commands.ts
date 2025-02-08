@@ -13,8 +13,8 @@ import {
   extractCodeBlocks,
   parseMarkdownContent,
   findMetaForRange,
-  parseDraftyId,
-} from "./codeBlockParser";
+} from "./parser/block";
+import { parseDraftyId } from "./parser/draftyid";
 import * as bind_utils from "./binding";
 
 export namespace commands {

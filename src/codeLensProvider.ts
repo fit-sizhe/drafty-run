@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { parseMarkdownContent } from "./codeBlockParser";
+import { parseMarkdownContent } from "./parser/block";
 
 export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
   public provideCodeLenses(

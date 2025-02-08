@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { extractCodeBlocks, parseDraftyId } from "./codeBlockParser";
+import { extractCodeBlocks } from "./parser/block";
+import { parseDraftyId } from "./parser/draftyid";
 import { SessionState } from "./StateManager";
 import { CodeBlock, CodeBlockExecution } from "./types";
 import { WebviewManager } from "./webview/WebviewManager";
@@ -22,20 +23,6 @@ const COMMENT_PREFIX: { [id: string]: string;} = {
 export function generateDraftyId(): string {
     const belly = Math.floor(Math.random() * 999).toString().padStart(3, "0");
     return `DRAFTY-ID-${belly}-0`;
-}
-
-export function getNextTailForSameBelly(
-    sessionBlocks: Map<string, CodeBlockExecution>,
-    belly: string
-): number {
-    let maxTail = -1;
-    for (const block of sessionBlocks.values()) {
-        const parsed = parseDraftyId(block.metadata?.bindingId || "");
-        if (parsed?.belly === belly) {
-            maxTail = Math.max(maxTail, parsed.tail);
-        }
-    }
-    return maxTail + 1;
 }
 
 export async function ensureDraftyIdInCodeBlock(
@@ -64,6 +51,7 @@ export async function ensureDraftyIdInCodeBlock(
     return newId;
 }
 
+// sync document block info and recorded session state
 export async function syncAllBlockIds(
     doc: vscode.TextDocument,
     session: SessionState,

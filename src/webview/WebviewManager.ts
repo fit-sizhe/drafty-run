@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import { CodeBlockExecution, CellOutput } from "../types";
 import { Environment } from "../EnvironmentManager";
-import { parseDraftyId } from "../codeBlockParser";
+import { parseDraftyId } from "../parser/draftyid";
 
 interface PanelInfo {
   panel: vscode.WebviewPanel;
@@ -297,7 +297,7 @@ export class WebviewManager {
 
     let resultTitle: string;
     if (block.bindingId && block.title) {
-      resultTitle = `${block.title} (${block.bindingId.tail})`;
+      resultTitle = `${block.title} (${block.bindingId.belly}-${block.bindingId.tail})`;
     } else {
       resultTitle = containerKey;
     }
