@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { WebviewManager } from "./webview/WebviewManager";
 import { EnvironmentManager } from "./EnvironmentManager";
 import { StateManager } from "./StateManager";
-import { RunnerRegistry } from "./RunnerRegistry";
+import { KernelServerRegistry } from "./kernel/KernelServerRegistry";
 import { MarkdownCodeLensProvider } from "./codeLensProvider";
 import { commands } from "./commands";
 
@@ -43,7 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (doc.languageId === "markdown") {
         const docPath = doc.uri.fsPath;
         // Remove runner
-        const pythonAdapter = RunnerRegistry.getInstance().getRunner("python");
+        const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
         pythonAdapter?.disposeRunner(docPath);
         // Remove session from StateManager
         StateManager.getInstance().removeSession(docPath);
@@ -67,7 +67,7 @@ export function deactivate() {
   webviewManager.disposeAllPanels();
 
   // Dispose all runners
-  RunnerRegistry.getInstance().disposeAll();
+  KernelServerRegistry.getInstance().disposeAll();
 
   console.log("Drafty extension deactivated");
 }

@@ -19,5 +19,5 @@ export interface JupyterMessage {
 
 export interface JupyterWidget {
   id: string;
-  // Additional model information can be added as needed.
+  // not used currently
 }

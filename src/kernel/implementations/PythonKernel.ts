@@ -5,8 +5,8 @@ import * as crypto from "crypto";
 import * as jmq from "../protocol/jmq";
 import { CellOutput } from "../../types";
 import { KernelConnection, ConnectionInfo, KernelSockets } from "../../kernel/base/KernelConnection";
-import { JupyterKernel } from "../../kernel/base/JupyterKernel";
 import { ExecutionResult } from "../../kernel/base/types";
+import { BaseKernel } from "../base/BaseKernel";
 
 // Helper functions from before.
 async function getRandomPort(): Promise<number> {
@@ -33,10 +33,10 @@ interface ExecutionItem {
 }
 
 /**
- * PythonKernel extends JupyterKernel and implements execution,
- * interruption, widget-support, and now accepts an onPartialOutput callback.
+ * PythonKernel extends BaseKernel and implements execution,
+ * interruption, and now accepts an onPartialOutput callback.
  */
-export class PythonKernel extends JupyterKernel {
+export class PythonKernel extends BaseKernel {
   private connection: KernelConnection;
   private kernelProcess: ChildProcessWithoutNullStreams | null = null;
   private kernelInfo: {
@@ -234,12 +234,22 @@ export class PythonKernel extends JupyterKernel {
       // TODO: add logic for handling extension-kernel comm for interactive plotting
       switch (msgType) {
         case "stream":
-          onPartialOutput({
-            type: "text",
-            timestamp: Date.now(),
-            content: String(content.text || ""),
-            stream: content.name || "stdout",
-          });
+          let texts = String(content.text || "");
+          if(texts.includes("INTERACTIVE_UPDATE")){
+            onPartialOutput({
+              type: "widget",
+              timestamp: Date.now(),
+              content: texts.replace("INTERACTIVE_UPDATE",""),
+              stream: content.name || "stdout",
+            });
+          } else {
+            onPartialOutput({
+              type: "text",
+              timestamp: Date.now(),
+              content: texts,
+              stream: content.name || "stdout",
+            });
+          }
           break;
         case "display_data":
         case "execute_result":

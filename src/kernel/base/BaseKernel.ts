@@ -6,7 +6,4 @@ export abstract class BaseKernel {
   abstract execute(code: string): Promise<ExecutionResult>;
   abstract interrupt(): Promise<void>;
 
-  // Widget support methods
-  abstract registerWidget(widget: JupyterWidget): void;
-  abstract updateWidget(widgetId: string, data: any): void;
 }

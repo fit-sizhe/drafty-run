@@ -8,14 +8,14 @@ import { CodeBlockExecution } from "./types";
 import { WebviewManager } from "./webview/WebviewManager";
 import { SessionState, StateManager } from "./StateManager"; 
 import { EnvironmentManager, truncatePath } from "./EnvironmentManager";
-import { RunnerRegistry } from "./RunnerRegistry";
+import { KernelServerRegistry } from "./kernel/KernelServerRegistry";
 import {
   extractCodeBlocks,
   parseMarkdownContent,
   findMetaForRange,
 } from "./parser/block";
 import { parseDraftyId } from "./parser/draftyid";
-import * as bind_utils from "./binding";
+import * as bind_utils from "./webview/draftyIdUtils";
 
 export namespace commands {
   export async function startSessionHandler(context: vscode.ExtensionContext) {
@@ -55,7 +55,7 @@ export namespace commands {
 
     const firstEnv = envManager.getEnvironments()[0];
     const pythonPath = firstEnv.path;
-    const pythonAdapter = RunnerRegistry.getInstance().getRunner("python");
+    const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
 
     if (pythonAdapter) {
       pythonAdapter.disposeRunner(mdFullPath);
@@ -157,10 +157,9 @@ export namespace commands {
     // sync all block IDs from the doc
     // at this point, all code blocks should have a DRAFTY-ID
     // the function also dispatch the command "reorder blocks"
-    await bind_utils.syncAllBlockIds(editor.document, currentSession, foundId);
+    await bind_utils.syncAllDraftyIds(editor.document, currentSession, foundId);
 
-    const webviewManager = WebviewManager.getInstance();
-    // Retrieve that block from session (it should exist after syncAllBlockIds).
+    // Retrieve that block from session (it should exist after syncAllDraftyIds).
     const blockInSession = currentSession.codeBlocks.get(foundId);
     if (!blockInSession) {
       // If for some reason it doesn't exist, create it now
@@ -265,7 +264,7 @@ export namespace commands {
       blockId: bindingId,
     });
 
-    const runner = RunnerRegistry.getInstance().getRunner(
+    const runner = KernelServerRegistry.getInstance().getRunner(
       language.toLowerCase(),
     );
     if (!runner) {
@@ -378,7 +377,7 @@ export namespace commands {
       return;
     }
 
-    const pythonAdapter = RunnerRegistry.getInstance().getRunner("python");
+    const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
     if (pythonAdapter && "terminateExecution" in pythonAdapter) {
       (pythonAdapter as any).terminateExecution(docPath);
       vscode.window.showInformationMessage(

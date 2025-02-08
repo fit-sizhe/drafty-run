@@ -1,4 +1,4 @@
-import { BARE_DRAFTYID_PATTERN, BINDINGID_PATTERN } from "./patterns";
+import { BARE_DRAFTYID_PATTERN, BINDINGID_PATTERN } from "./regex";
 
 export interface DraftyIdParts {
   head: string; // e.g. "DRAFTY-ID"

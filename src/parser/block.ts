@@ -3,7 +3,7 @@ import markdownit from "markdown-it";
 import { Token } from "markdown-it";
 import { CodeBlock } from "../types";
 import { DraftyIdParts } from "./draftyid";
-import { TITLE_PATTERN, BINDINGID_PATTERN } from "./patterns";
+import { TITLE_PATTERN, BINDINGID_PATTERN } from "./regex";
 
 export function extractCodeBlocks(text: Token[] | string): CodeBlock[] {
   let tokens: Token[];

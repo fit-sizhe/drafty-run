@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
-import { extractCodeBlocks } from "./parser/block";
-import { parseDraftyId } from "./parser/draftyid";
-import { SessionState } from "./StateManager";
-import { CodeBlock, CodeBlockExecution } from "./types";
-import { WebviewManager } from "./webview/WebviewManager";
+import { extractCodeBlocks } from "../parser/block";
+import { parseDraftyId } from "../parser/draftyid";
+import { SessionState } from "../StateManager";
+import { CodeBlock, CodeBlockExecution } from "../types";
+import { WebviewManager } from "./WebviewManager";
 
 
 interface BellyGroupDocInfo {
@@ -52,7 +52,7 @@ export async function ensureDraftyIdInCodeBlock(
 }
 
 // sync document block info and recorded session state
-export async function syncAllBlockIds(
+export async function syncAllDraftyIds(
     doc: vscode.TextDocument,
     session: SessionState,
     focusedId: string

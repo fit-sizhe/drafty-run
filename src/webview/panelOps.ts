@@ -2,7 +2,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { panelTopOps } from "./panelTopOps";
 
-import { RunnerRegistry } from "../RunnerRegistry";
+import { KernelServerRegistry } from "../kernel/KernelServerRegistry";
 import { StateManager } from "../StateManager";
 import { EnvironmentManager } from "../EnvironmentManager";
 import { WebviewManager } from "./WebviewManager";
@@ -29,7 +29,7 @@ export namespace panelOps {
   export function panelDisposedCallback(docPath: string) {
     console.log(`Panel for docPath: ${docPath} disposed.`);
 
-    const pythonAdapter = RunnerRegistry.getInstance().getRunner("python");
+    const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
     pythonAdapter?.disposeRunner(docPath);
 
     StateManager.getInstance().removeSession(docPath);
@@ -44,7 +44,7 @@ export namespace panelOps {
     const envManager = EnvironmentManager.getInstance();
     const webviewManager = WebviewManager.getInstance();
     const stateManager = StateManager.getInstance();
-    const pythonManager = RunnerRegistry.getInstance().getRunner("python");
+    const pythonManager = KernelServerRegistry.getInstance().getRunner("python");
 
     const docPath = webviewManager.getDocPathForPanel(panel);
     if (!docPath) {
