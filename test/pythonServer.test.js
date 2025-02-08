@@ -1,10 +1,8 @@
-/* kernelManager.test.js */
-
 const path = require('path');
 const fs = require('fs');
 const { strict: assert } = require('assert'); // or use chai, if you prefer
 const { describe, it, before, after } = require('mocha');
-const { KernelManager } = require('../out/kernelManager'); // Adjust to your actual import
+const { PyKernelServer } = require('../out/kernel/implementations/PyKernelServer'); // Adjust to your actual import
 
 // If you want to set a custom python path, set process.env.PYTHON_TEST_PATH:
 const PYTHON_PATH = process.env.PYTHON_TEST_PATH || 'python';
@@ -20,7 +18,7 @@ describe('KernelManager Integration Tests', function() {
 
   before(async function() {
     // Create the KernelManager instance
-    km = new KernelManager();
+    km = new PyKernelServer();
 
     // Start a kernel for our test doc
     // In normal usage, you'd await startProcessForDoc with an onDataCallback
@@ -48,7 +46,7 @@ import sys
 print("Hello from Python " + sys.version.split()[0])
 2+3
 `;
-    const result = await km.queueCodeExecution(DOC_PATH, code);
+    const result = await km.executeCode(DOC_PATH, code);
 
     // The result.outputs is an array of CellOutputs (text, image, error, etc.)
     // We'll check if there's a "text" output that ends with "5"
@@ -62,10 +60,10 @@ print("Hello from Python " + sys.version.split()[0])
 
   it('should confirm kernel is persistent between executions (variables stay in memory)', async function() {
     // 1) Define a variable in the Python namespace
-    await km.queueCodeExecution(DOC_PATH, 'x = 42');
+    await km.executeCode(DOC_PATH, 'x = 42');
     
     // 2) Check that variable is still there
-    const result = await km.queueCodeExecution(DOC_PATH, 'print(x)');
+    const result = await km.executeCode(DOC_PATH, 'print(x)');
     const printedValues = result.outputs
       .filter(o => o.type === 'text')
       .map(o => o.content.trim());
@@ -92,7 +90,7 @@ while True:
     const outputs = [];
     let terminated = false;
 
-    const execPromise = km.queueCodeExecution(DOC_PATH, code, (output) => {
+    const execPromise = km.executeCode(DOC_PATH, code, (output) => {
       if (!terminated && output.type === 'text' && output.content.includes('Iteration')) {
         outputs.push(output.content.trim());
         if (outputs.length === 3) {
@@ -117,7 +115,7 @@ while True:
 
     // 3) Verify kernel is still responsive
     console.log('Testing if kernel is still responsive...');
-    const result = await km.queueCodeExecution(DOC_PATH, 'print("Still alive?")');
+    const result = await km.executeCode(DOC_PATH, 'print("Still alive?")');
     const aliveOutputs = result.outputs
       .filter(o => o.type === 'text' && o.content.includes('Still alive?'));
     assert.ok(aliveOutputs.length > 0, 'Kernel did not respond after interrupt');
@@ -128,14 +126,14 @@ while True:
     // and the kernel keeps track of intermediate states.
 
     // 1) Python sum
-    let result = await km.queueCodeExecution(DOC_PATH, 'a = sum(range(10))\nprint(a)');
+    let result = await km.executeCode(DOC_PATH, 'a = sum(range(10))\nprint(a)');
     let lines = result.outputs
       .filter(o => o.type === 'text')
       .map(o => o.content.trim());
     assert.ok(lines.includes('45'), 'Expected "45" from sum(range(10))');
 
     // 2) Next code uses `a` in a new cell
-    result = await km.queueCodeExecution(DOC_PATH, 'print(a * 2)');
+    result = await km.executeCode(DOC_PATH, 'print(a * 2)');
     lines = result.outputs
       .filter(o => o.type === 'text')
       .map(o => o.content.trim());

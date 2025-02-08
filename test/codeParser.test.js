@@ -1,12 +1,11 @@
 const { strict: assert } = require('assert');
 const { describe, it} = require('mocha');
-const {
-  parseDraftyId,
-  parseBellyTail,
+const { parseDraftyId, parseBellyTail } = require('../out/parser/draftyid')
+const { 
   extractCodeBlocks,
   parseMarkdownContent,
   extractCodeFromRange,
-} = require('../out/codeBlockParser');
+} = require('../out/parser/block');
 
 // Mock vscode.TextDocument
 const createMockDocument = (content) => ({

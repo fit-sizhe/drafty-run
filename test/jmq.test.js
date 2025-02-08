@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { Message, Socket } = require('../out/jmq');
+const { Message, Socket } = require('../out/kernel/protocol/jmq');
 
 describe('Jupyter Message Protocol Tests', function() {
   // Example data for testing that matches Jupyter protocol
