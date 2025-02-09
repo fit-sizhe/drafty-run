@@ -66,7 +66,6 @@ saveButton?.addEventListener("click", () => {
 });
 
 // Listen for commands from extension
-// TODO: add listener to "updatePlot"
 window.addEventListener("message", (event) => {
   const message = event.data;
   switch (message.command) {
@@ -302,6 +301,21 @@ function updateBlockOutput(blockId, output) {
     }
     textDiv.textContent = output.content;
     outputsDiv.appendChild(textDiv);
+  } else if (output.type === "widget") {
+    // TODO: add handler to interactive updates
+    let command = output.content.command; // per type WidgetOutput
+    let widgetWrapper = outputsDiv.querySelector(".widget-output");
+    if(widgetWrapper && command === "init"){
+      // per arrangement in webviewManager.createOutputHtml
+      widgetWrapper.innerHTML = "";
+      let widgetControls = document.createElement("div");
+      widgetControls.className = "widget-controls";
+      for(const control of output.content.directives.controls){
+        createControlElement(widgetControls, control);
+      }
+      widgetWrapper.appendChild(widgetControls);
+    }
+
   } else if (output.type === "image") {
     let imgWrapper = outputsDiv.querySelector(".image-output");
     if (!imgWrapper) {
@@ -333,6 +347,62 @@ function updateBlockOutput(blockId, output) {
     outputsDiv.appendChild(richDiv);
   }
 }
+
+/**
+ * Creates an HTML element for a given control.
+ *
+ * For a Slider, it creates an <input type="range"> element.
+ * For an Input of type "number", it creates an <input type="number"> element.
+ * For an Input of type "options", it creates a <select> element with the provided options.
+ *
+ * @param control - The control configuration.
+ * @returns A container HTMLElement that includes a label and the control element.
+ */
+function createControlElement(container, control) {
+  // Create a label element
+  const label = document.createElement("label");
+  label.textContent = control.param;
+  label.htmlFor = control.param;
+  container.appendChild(label);
+
+  let controlElement;
+
+  // Create the control element based on its type
+  if (control.type === "slider") {
+    // Create a slider (range input)
+    controlElement = document.createElement("input");
+    controlElement.setAttribute("type", "range");
+    controlElement.id = control.param;
+    controlElement.setAttribute("min", control.min.toString());
+    controlElement.setAttribute("max", control.max.toString());
+    if (control.step !== undefined) {
+      controlElement.setAttribute("step", control.step.toString());
+    }
+  } else if (control.type === "number") {
+    // Create a number input
+    controlElement = document.createElement("input");
+    controlElement.setAttribute("type", "number");
+    controlElement.id = control.param;
+  } else if (control.type === "options") {
+    // Create a select element with options
+    controlElement = document.createElement("select");
+    controlElement.id = control.param;
+    if (control.options && control.options.length > 0) {
+      control.options.forEach((option) => {
+        const optionEl = document.createElement("option");
+        optionEl.value = option;
+        optionEl.textContent = option;
+        controlElement.appendChild(optionEl);
+      });
+    }
+  }
+
+  controlElement.className = "widget-control";
+
+  container.appendChild(controlElement);
+  return container;
+}
+
 
 function scrollToBlock(blockId) {
   const containerId = "result-block-" + blockId;

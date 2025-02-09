@@ -1,23 +1,27 @@
-// Basic types for the interactive plot configuration
-type Input = {
+// Updated types
+export type Input = {
   param: string;
   type: "number" | "options";
   options?: string[];
+  current: string | number;
 };
 
-type Slider = {
+export type Slider = {
   param: string;
+  type: "slider";
   min: number;
   max: number;
   step?: number;
+  current: number;
 };
 
-type PlotExec = {
+export type PlotExec = {
   plot_type: "surface" | "scatter" | "curve";
-  command: string;
+  // LHS -> RHS of a plotting command, e.g. "y=some_func(a,b)" becomes y -> some_func(a,b)
+  commands: Map<string, string>;
 };
 
-interface Directives {
+export interface Directives {
   execute: PlotExec[]; // one plot -> multiple plot exec
   controls: (Input | Slider)[]; // one plot -> multiple controls
 }
@@ -55,13 +59,38 @@ interface PlotParseResult {
   errors: ParseError[];
 }
 
-/**
- * Parses a string containing directives and returns a ParseResult with any directives
- * found and an array of errors (if any).
- *
- * @param code The full source code (or fenced code block) to parse.
- * @returns A ParseResult containing directives (if found) and errors.
- */
+// ----------------------------------------------------------------------
+// Helper function to split a string by top-level delimiters (',' or ';')
+// It splits only on delimiters that are not enclosed in (), [], or {}.
+function splitByTopLevelDelimiters(input: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let depth = 0;
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    if (char === "(" || char === "[" || char === "{") {
+      depth++;
+    } else if (char === ")" || char === "]" || char === "}") {
+      if (depth > 0) depth--;
+    }
+    // Split if we hit a delimiter at top level.
+    if ((char === "," || char === ";") && depth === 0) {
+      if (current.trim() !== "") {
+        tokens.push(current.trim());
+      }
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  if (current.trim() !== "") {
+    tokens.push(current.trim());
+  }
+  return tokens;
+}
+
+// ----------------------------------------------------------------------
+// Main parser function
 export function parseDirectivesFromStr(code: string): ParseResult {
   const lines = code.split("\n");
   const directives: Directives = { execute: [], controls: [] };
@@ -74,7 +103,6 @@ export function parseDirectivesFromStr(code: string): ParseResult {
       hasDirectives = true;
       const directiveText = trimmedLine.substring(2).trim();
 
-      // Slider directive
       if (directiveText.startsWith("slider:")) {
         const sliderResult = parseSliderDirective(
           directiveText.substring(7).trim(),
@@ -84,8 +112,6 @@ export function parseDirectivesFromStr(code: string): ParseResult {
           directives.controls.push(...sliderResult.sliders);
         }
         errors.push(...sliderResult.errors);
-
-        // Input directive (accepts both colon and semicolon)
       } else if (
         directiveText.startsWith("input:") ||
         directiveText.startsWith("input;")
@@ -98,8 +124,6 @@ export function parseDirectivesFromStr(code: string): ParseResult {
           directives.controls.push(...inputResult.inputs);
         }
         errors.push(...inputResult.errors);
-
-        // Plot directives: surface, scatter, curve
       } else if (
         directiveText.startsWith("surface:") ||
         directiveText.startsWith("scatter:") ||
@@ -117,12 +141,7 @@ export function parseDirectivesFromStr(code: string): ParseResult {
         }
         errors.push(...plotResult.errors);
       } else {
-        // Unknown directive type
-        errors.push({
-          line: i + 1,
-          directive: directiveText,
-          message: "Unknown directive type.",
-        });
+        // other metadata
       }
     }
   }
@@ -136,25 +155,22 @@ export function parseDirectivesFromStr(code: string): ParseResult {
 /**
  * Parses a slider directive string.
  * Examples:
- *   "#| slider: a, 1, 5"  → creates one slider for parameter "a"
- *   "#| slider: [a,b,c], 1, 5, 1" → creates one slider for each of a, b, and c.
+ *   "#| slider: a, 1, 5"  → creates a slider for "a" with current set to 3.
+ *   "#| slider: b, 1, 6, 3" → allowed values: [1,4] → current set to 1.
+ *   "#| slider: c, 1, 7, 3" → allowed values: [1,4,7] → current set to 4.
  *
- * @param directive The directive string (without the "slider:" keyword).
- * @param line The line number where this directive appears.
- * @returns A SliderParseResult with parsed sliders and any errors.
+ * @param directive The directive string (without "slider:").
+ * @param line The 1-indexed line number.
+ * @returns A SliderParseResult with parsed sliders and errors.
  */
 function parseSliderDirective(
   directive: string,
   line: number
 ): SliderParseResult {
   const result: SliderParseResult = { errors: [] };
+  const tokens = splitByTopLevelDelimiters(directive);
 
-  // Split by commas and remove any empty parts (tolerates extra/trailing commas)
-  const parts = directive
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s !== "");
-  if (parts.length < 3) {
+  if (tokens.length < 3) {
     result.errors.push({
       line,
       directive,
@@ -162,11 +178,19 @@ function parseSliderDirective(
     });
     return result;
   }
+  if (tokens.length > 4) {
+    result.errors.push({
+      line,
+      directive,
+      message: "Slider directive has too many parts.",
+    });
+    return result;
+  }
 
-  const paramPart = parts[0];
-  const minStr = parts[1];
-  const maxStr = parts[2];
-  const stepStr = parts[3]; // optional
+  const paramPart = tokens[0];
+  const minStr = tokens[1];
+  const maxStr = tokens[2];
+  const stepStr = tokens[3];
 
   const min = parseFloat(minStr);
   const max = parseFloat(maxStr);
@@ -193,9 +217,36 @@ function parseSliderDirective(
     }
   }
 
-  // Remove surrounding brackets (if any) then split by comma to support multiple controls
+  // Compute the "current" value.
+  let current: number;
+  if (step === undefined) {
+    // Continuous slider: use the arithmetic median.
+    current = (min + max) / 2;
+  } else {
+    // Discrete slider: compute allowed values.
+    const allowed: number[] = [];
+    for (let val = min; val <= max + 1e-9; val += step) {
+      allowed.push(val);
+    }
+    if (allowed.length === 0) {
+      result.errors.push({
+        line,
+        directive,
+        message: "No allowed values computed for slider directive.",
+      });
+      return result;
+    }
+    // Choose the median: if even, choose the first element.
+    if (allowed.length % 2 === 1) {
+      current = allowed[Math.floor(allowed.length / 2)];
+    } else {
+      current = allowed[0];
+    }
+  }
+
+  // Allow multiple parameters if enclosed in square brackets.
   const params = paramPart
-    .replace(/[\[\]]/g, "")
+    .replace(/^\[|\]$/g, "")
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s);
@@ -208,48 +259,63 @@ function parseSliderDirective(
     return result;
   }
 
-  result.sliders = [];
-  for (const param of params) {
-    result.sliders.push({
-      param,
-      min,
-      max,
-      step,
-    });
-  }
+  result.sliders = params.map((param) => ({
+    param,
+    type: "slider",
+    min,
+    max,
+    step,
+    current,
+  }));
+
   return result;
 }
 
 /**
  * Parses an input directive string.
  * Examples:
- *   "#| input: a" → a number input for "a".
- *   "#| input: [a,b]" → number inputs for both "a" and "b".
- *   "#| input: b, ['opt1', 'opt2', c]" → options input for "b".
- *   "#| input; [a,b], ['opt1','opt2']" → options inputs for both "a" and "b".
+ *   "#| input: a, 3" → a number input for "a" with default (current) value 3.
+ *   "#| input: [a,b], 0" → number inputs for "a" and "b" with default 0.
+ *   "#| input: b, ['opt1','opt2']" → an options input for "b" (current set to "opt1").
  *
- * @param directive The directive string (without the "input:" or "input;" keyword).
- * @param line The line number where this directive appears.
- * @returns An InputParseResult with parsed inputs and any errors.
+ * For a number input, the syntax is now: param, default_value.
+ * For an options input, the syntax remains with an options array.
+ *
+ * @param directive The directive string (without "input:" or "input;").
+ * @param line The 1-indexed line number.
+ * @returns An InputParseResult with parsed inputs and errors.
  */
 function parseInputDirective(
   directive: string,
   line: number
 ): InputParseResult {
   const result: InputParseResult = { errors: [] };
-  let paramPart = directive;
-  let optionsPart = "";
+  const tokens = splitByTopLevelDelimiters(directive);
 
-  // Only split on the first comma (since optionsPart may itself contain commas)
-  const commaIndex = directive.indexOf(",");
-  if (commaIndex !== -1) {
-    paramPart = directive.substring(0, commaIndex).trim();
-    optionsPart = directive.substring(commaIndex + 1).trim();
+  if (tokens.length < 2) {
+    result.errors.push({
+      line,
+      directive,
+      message:
+        "Input directive must have two parts: parameter(s) and default value/options.",
+    });
+    return result;
+  }
+  if (tokens.length > 2) {
+    result.errors.push({
+      line,
+      directive,
+      message: "Input directive has too many parts.",
+    });
+    return result;
   }
 
-  // Allow a list of parameters if enclosed in brackets
+  const paramPart = tokens[0];
+  const secondPart = tokens[1];
+
+  // Allow multiple parameters if enclosed in square brackets.
   const params = paramPart
-    .replace(/[\[\]]/g, "")
+    .replace(/^\[|\]$/g, "")
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s);
@@ -263,80 +329,76 @@ function parseInputDirective(
   }
 
   result.inputs = [];
-  if (optionsPart) {
-    // If the options part is bracketed, use a simple custom parser.
-    if (optionsPart.startsWith("[") && optionsPart.endsWith("]")) {
-      const inner = optionsPart.substring(1, optionsPart.length - 1);
-      const opts = inner
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s);
-      const cleanedOpts = opts.map((opt) => {
-        if (
-          (opt.startsWith("'") && opt.endsWith("'")) ||
-          (opt.startsWith('"') && opt.endsWith('"'))
-        ) {
-          return opt.substring(1, opt.length - 1);
-        }
-        return opt;
+  // Determine whether this is an options input or a number input.
+  if (secondPart.startsWith("[") && secondPart.endsWith("]")) {
+    // Options input: parse the options list.
+    const inner = secondPart.substring(1, secondPart.length - 1);
+    let options = inner
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s);
+    options = options.map((opt) => {
+      if (
+        (opt.startsWith("'") && opt.endsWith("'")) ||
+        (opt.startsWith('"') && opt.endsWith('"'))
+      ) {
+        return opt.substring(1, opt.length - 1);
+      }
+      return opt;
+    });
+    if (options.length === 0) {
+      result.errors.push({
+        line,
+        directive,
+        message: "Empty options list in input directive.",
       });
-      for (const param of params) {
-        result.inputs.push({
-          param,
-          type: "options",
-          options: cleanedOpts,
-        });
-      }
-    } else {
-      // Otherwise, attempt to parse as JSON (after replacing single quotes)
-      try {
-        const parsed = JSON.parse(optionsPart.replace(/'/g, '"'));
-        if (Array.isArray(parsed)) {
-          const cleanedOpts = parsed.map((o) => String(o));
-          for (const param of params) {
-            result.inputs.push({
-              param,
-              type: "options",
-              options: cleanedOpts,
-            });
-          }
-        } else {
-          result.errors.push({
-            line,
-            directive,
-            message: "Options provided in input directive are not an array.",
-          });
-        }
-      } catch (e) {
-        result.errors.push({
-          line,
-          directive,
-          message: "Invalid options format in input directive.",
-        });
-      }
+      return result;
+    }
+    // For options input, current is set to the first option.
+    for (const param of params) {
+      result.inputs.push({
+        param,
+        type: "options",
+        options,
+        current: options[0],
+      });
     }
   } else {
-    // No options provided so assume a number input.
+    // Number input: secondPart should be the default value.
+    const defaultVal = parseFloat(secondPart);
+    if (isNaN(defaultVal)) {
+      result.errors.push({
+        line,
+        directive,
+        message: "Invalid default value for number input directive.",
+      });
+      return result;
+    }
     for (const param of params) {
       result.inputs.push({
         param,
         type: "number",
+        current: defaultVal,
       });
     }
   }
+
   return result;
 }
 
 /**
  * Parses a plot directive string.
  * Examples:
- *   "#| surface: some_func(x,..)" → a surface plot.
- *   "#| scatter: some_func(x,..)"  → a scatter plot.
- *   "#| curve: some_func(x,..)"    → a curve plot.
+ *   "#| surface: y = some_func(x,..)" → a surface plot.
+ *   "#| surface: y1=some_func(x,..); y2" → multiple surfaces in one plot (no recalc on y2).
+ *   "#| scatter: y = some_func(x,..)"  → a scatter plot.
+ *   "#| scatter: y1=some_func(x,..); y2 = some_func();"  → a scatter plot of multiple dot styles.
+ *   "#| curve: y = some_func(x,..)"    → a curve plot.
+ *   "#| curve: y1=some_func(x,..); y2 = some_func(x,..);"  → multiple curves in one plot.
  *
  * @param directive The command portion of the plot directive.
  * @param plotType The plot type (e.g. "surface", "scatter", or "curve").
- * @param line The line number where this directive appears.
+ * @param line The 1-indexed line number.
  * @returns A PlotParseResult with the parsed plot (if any) and errors.
  */
 function parsePlotDirective(
@@ -355,9 +417,67 @@ function parsePlotDirective(
     });
     return result;
   }
+
+  const tokens = splitByTopLevelDelimiters(directive);
+  if (tokens.length === 0) {
+    result.errors.push({
+      line,
+      directive,
+      message: "No commands found in plot directive.",
+    });
+    return result;
+  }
+
+  const commandsMap = new Map<string,string>();
+  for (const cmd of tokens) {
+    const equalIndex = cmd.indexOf("=");
+    if (equalIndex >= 0) {
+      const lhs = cmd.substring(0, equalIndex).trim();
+      const rhs = cmd.substring(equalIndex + 1).trim();
+      if (!lhs) {
+        result.errors.push({
+          line,
+          directive: cmd,
+          message: "Missing left-hand side in plot command.",
+        });
+        continue;
+      }
+      if (!rhs) {
+        result.errors.push({
+          line,
+          directive: cmd,
+          message: `Missing right-hand side in plot command for "${lhs}".`,
+        });
+        continue;
+      }
+      commandsMap.set(lhs,rhs);
+    } else {
+      const lhs = cmd.trim();
+      if (!lhs) {
+        result.errors.push({
+          line,
+          directive: cmd,
+          message: "Empty plot command found.",
+        });
+        continue;
+      }
+      commandsMap.set(lhs,"");
+    }
+  }
+
+  if (!commandsMap) {
+    result.errors.push({
+      line,
+      directive,
+      message: "No valid plot commands found in directive.",
+    });
+    return result;
+  }
+
   result.plot = {
     plot_type: normalizedPlotType as "surface" | "scatter" | "curve",
-    command: directive,
+    commands: commandsMap,
   };
+
   return result;
 }

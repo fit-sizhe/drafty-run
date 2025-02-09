@@ -67,6 +67,33 @@
     .text-output.stderr {
       color: var(--vscode-errorForeground);
     }
+    .widget-output {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .widget-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 95%;
+      margin: 5px;
+      padding: 4px;
+      border: 1px solid var(--vscode-button-foreground);
+    }
+    .widget-control {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.8rem;
+      flex: 1;
+      color: var(--vscode-input-foreground);
+      background-color: var(--vscode-input-background);
+      border: 1px solid var(--vscode-button-background);
+      padding: 4px 6px;
+      border-radius: 3px;
+    }
+    .widget-plot {
+      width: 100%;
+    }
     .image-output img {
       max-width: 100%;
       height: auto;

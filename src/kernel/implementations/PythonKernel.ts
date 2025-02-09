@@ -231,15 +231,15 @@ export class PythonKernel extends BaseKernel {
       }
       const msgType = msg.header.msg_type;
       const content = msg.content || {};
-      // TODO: add logic for handling extension-kernel comm for interactive plotting
       switch (msgType) {
         case "stream":
           let texts = String(content.text || "");
+          // relay message to webview for interactive plotting
           if(texts.includes("INTERACTIVE_UPDATE")){
             onPartialOutput({
               type: "widget",
               timestamp: Date.now(),
-              content: texts.replace("INTERACTIVE_UPDATE",""),
+              content: JSON.parse(texts),
               stream: content.name || "stdout",
             });
           } else {

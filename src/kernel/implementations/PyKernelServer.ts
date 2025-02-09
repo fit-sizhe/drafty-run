@@ -41,7 +41,7 @@ export class PyKernelServer implements ILanguageServer {
     panel?: vscode.WebviewPanel
   ) {
 
-    const onPartialOutput = (partialOutput: any) => {
+    const onPartialOutput = (partialOutput: CellOutput) => {
 
       if (partialOutput.type === "image") {
         // Overwrite old images from the same run

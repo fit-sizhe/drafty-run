@@ -1,3 +1,5 @@
+import { Directives } from "./parser/directives"
+
 export interface BaseOutput {
   type: string;
   timestamp: number;
@@ -32,10 +34,21 @@ export interface RichOutput extends BaseOutput {
 }
 
 // types for updates to interactive plot
+type UpdateRes = {
+  plot_type: "scatter" | "surface" | "curve", 
+  // calculated name -> data
+  data: Map<string,any>};
+
 export interface WidgetOutput extends BaseOutput {
   type: "widget";
-  content: string;
-  stream: "stdout" | "stderr";
+  // parsed from result string:
+  content: {
+    header: "INTERACTIVE_PLOT",
+    drafty_id: string,
+    command: "init" | "update",
+    directives?: Directives,
+    results: UpdateRes
+  };
 }
 
 export type CellOutput = TextOutput | ImageOutput | ErrorOutput | RichOutput | WidgetOutput;
@@ -50,7 +63,8 @@ export interface CodeBlock {
     head: string; // e.g. "DRAFTY-ID"
     belly: string; // e.g. "123"
     tail: number; // e.g. 4
-  }
+  };
+  directives?: Directives;
 }
 
 export interface ExecutionState {

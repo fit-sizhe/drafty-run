@@ -3,6 +3,7 @@ import * as fs from "fs";
 import { CodeBlockExecution, CellOutput } from "../types";
 import { Environment } from "../managers/EnvironmentManager";
 import { parseDraftyId } from "../parser/draftyid";
+import { Input, Slider } from "../parser/directives";
 
 interface PanelInfo {
   panel: vscode.WebviewPanel;
@@ -329,6 +330,18 @@ export class WebviewManager {
       case "text":
         return `
           <div class="output text-output ${output.stream || ""}">${this.escapeHtml(output.content)}</div>`;
+      case "widget":
+        // TODO: arrange widget-plot element
+        let controls = output.content.directives.controls.map(this.createControlHtml).join('\n');
+        return `
+          <div class="output widget-output">
+            <div class="widget-controls" id="widget-controls-${output.content.drafty_id}">
+              ${controls}
+            </div>
+            <div class="widget-plot" id="widget-plot-${output.content.drafty_id}">
+              ${JSON.stringify(output.content.results)}
+            </div>
+          </div>`;
       case "image":
         return `
           <div class="output image-output">
@@ -348,6 +361,45 @@ export class WebviewManager {
       default:
         return "";
     }
+  }
+
+  /**
+   * Creates an HTML string for a given control.
+   *
+   * - For a Slider, it creates an `<input type="range">` element.
+   * - For an Input with type "number", it creates an `<input type="number">` element.
+   * - For an Input with type "options", it creates a `<select>` element with `<option>` children.
+   */
+  private createControlHtml(control: Input | Slider): string {
+    // Start the container div and add a label
+    let html = `<div class="widget-control">`;
+    html += `<label for="${control.param}">${control.param}</label>`;
+
+    // Generate the control element based on its type
+    if (control.type === "slider") {
+      // Create a slider (range input)
+      html += `<input type="range" id="control-${control.param}" name="${control.param}" ` +
+              `min="${control.min}" max="${control.max}"` +
+              (control.step !== undefined ? ` step="${control.step}"` : "") +
+              `>`;
+    } else if (control.type === "number") {
+      // Create a number input
+      html += `<input type="number" id="control-${control.param}" name="${control.param}">`;
+    } else if (control.type === "options") {
+      // Create a select element with options
+      html += `<select id="control-${control.param}" name="${control.param}">`;
+      if (control.options && control.options.length > 0) {
+        control.options.forEach(option => {
+          html += `<option value="${option}">${option}</option>`;
+        });
+      }
+      html += `</select>`;
+    } else {
+      throw new Error("Unknown control type");
+    }
+
+    html += `</div>`;
+    return html;
   }
 
   private escapeHtml(unsafe: string): string {
