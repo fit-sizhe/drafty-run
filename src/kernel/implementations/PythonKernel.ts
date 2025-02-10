@@ -232,34 +232,33 @@ export class PythonKernel extends BaseKernel {
       const msgType = msg.header.msg_type;
       const content = msg.content || {};
       switch (msgType) {
-        case "stream":
-          let texts = String(content.text || "");
-          // relay message to webview for interactive plotting
-          if(texts.includes("INTERACTIVE_UPDATE")){
-            onPartialOutput({
-              type: "widget",
-              timestamp: Date.now(),
-              content: JSON.parse(texts),
-              stream: content.name || "stdout",
-            });
-          } else {
-            onPartialOutput({
-              type: "text",
-              timestamp: Date.now(),
-              content: texts,
-              stream: content.name || "stdout",
-            });
-          }
+        case "stream": // deal with snippet using print()
+          onPartialOutput({
+            type: "text",
+            timestamp: Date.now(),
+            content: String(content.text || ""),
+            stream: content.name || "stdout",
+          });
           break;
         case "display_data":
         case "execute_result":
           if (content.data && content.data["text/plain"]) {
-            onPartialOutput({
-              type: "text",
-              timestamp: Date.now(),
-              content: String(content.data["text/plain"]),
-              stream: "stdout",
-            });
+            let texts = String(content.data["text/plain"]);
+            // relay message to webview for interactive plotting
+            if (texts.includes("INTERACTIVE_UPDATE")){
+              onPartialOutput({
+                type: "widget",
+                timestamp: Date.now(),
+                content: JSON.parse(texts),
+              });
+            } else { 
+              onPartialOutput({
+                type: "text",
+                timestamp: Date.now(),
+                content: String(content.data["text/plain"]),
+                stream: "stdout",
+              });
+            }
           }
           if (content.data && content.data["image/png"]) {
             onPartialOutput({
