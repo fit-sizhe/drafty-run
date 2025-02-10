@@ -171,6 +171,7 @@ export function parseDirectivesFromStr(code: string): ParseResult {
   const directives: Directives = { plot_executes: [], controls: [] };
   const errors: ParseError[] = [];
   let hasDirectives = false;
+  let onlyPlotType = ""; // there should be only one and only one type
 
   for (let i = 0; i < lines.length; i++) {
     const trimmedLine = lines[i].trim();
@@ -212,6 +213,14 @@ export function parseDirectivesFromStr(code: string): ParseResult {
           i + 1
         );
         if (plotResult.plot) {
+          if (onlyPlotType && onlyPlotType != plotResult.plot.plot_type) {
+            errors.push({
+              line: i + 1,
+              directive: directiveText.substring(colonIdx + 1).trim(),
+              message: "Each Canvas Can Draw Only ONE Plot Type.",
+            });
+          } else if (!onlyPlotType) onlyPlotType = plotResult.plot.plot_type;
+
           directives.plot_executes.push(plotResult.plot);
         }
         errors.push(...plotResult.errors);

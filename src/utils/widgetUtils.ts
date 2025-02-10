@@ -2,8 +2,10 @@ import { Directives } from "../parser/directives";
 /**
  * Converts a Map to a plain object so that it can be JSON‑stringified.
  */
-function mapToObject(map: Map<string, string>): Record<string, string> {
-  const obj: Record<string, string> = {};
+function mapToObject(
+  map: Map<string, { args: string[]; exec: string }>
+): Record<string, { args: string[]; exec: string }> {
+  const obj: Record<string, { args: string[]; exec: string }> = {};
   map.forEach((v, k) => {
     obj[k] = v;
   });
@@ -19,11 +21,11 @@ function cloneDirectives(directives: Directives) {
   const controls = directives.controls.slice();
 
   // Clone execute array, converting each Map to an object.
-  const execute = directives.execute.map((pe) => ({
+  const plot_executes = directives.plot_executes.map((pe) => ({
     plot_type: pe.plot_type,
     commands: mapToObject(pe.commands),
   }));
-  return { controls, execute };
+  return { controls, plot_executes };
 }
 
 /**
@@ -46,16 +48,16 @@ function cloneDirectives(directives: Directives) {
  *   a = 3
  *   b = 10
  *   z = some_func(x,y)
- *   print(json.dumps({
+ *   json.dumps({
  *     "type": "widget",
  *     "content": {
  *       "header": "INTERACTIVE_PLOT",
  *       "drafty_id": "my_drafty_id",
  *       "command": "init",
  *       "directives": { ... },
- *       "results": {"plot_type": "surface", "data": {"z": z}}
+ *       "results": {"plot_type": "surface", "args": {"x":x, "y":y}, "data": {"z": z}}
  *     }
- *   }))
+ *   })
  *
  * @param directives The parsed directives.
  * @param drafty_id The drafty_id string.
@@ -85,35 +87,40 @@ export function generatePythonSnippet(
   // For simplicity, use only the first plot directive (if any).
   let plotType = "";
   const plotDataAssignments: string[] = [];
-  if (directives.execute.length > 0) {
-    const plotExec = directives.execute[0];
-    plotType = plotExec.plot_type;
+  for (const plotExec of directives.plot_executes) {
+    if(!plotType) {
+      plotType = plotExec.plot_type;
+    // ignore plot type other than the first found type
+    } else if (plotType != plotExec.plot_type) {
+      continue;
+    }
     // For each command in the plot directive, assign a variable.
     plotExec.commands.forEach((value, key) => {
-      // Generate a Python assignment for the command.
-      // (Assumes the RHS is valid Python code.)
-      lines.push(`${key} = ${value}`);
-      // Also prepare the mapping for the JSON "data" field.
-      plotDataAssignments.push(`"${key}": ${key}`);
+      // Generate a Python assignment for the command
+      if (value.exec != "") lines.push(`${key} = ${value.exec}`);
+      // Also prepare the mapping
+      plotDataAssignments.push(`"data": {"${key}": ${key}}`);
+      let args: string[] = [];
+      for (const arg of value.args) args.push(`"${arg}": ${arg}`);
+      plotDataAssignments.push(`"args": {${args.join(", ")}}`);
     });
   }
 
   // === Build the widget output print statement ===
   // Clone directives while converting any Map objects to plain objects.
   const directivesClone = cloneDirectives(directives);
-  // JSON-stringify the cloned directives.
   const directivesJson = JSON.stringify(directivesClone);
 
   // Build the results part.
   let resultsPart = "{}";
   if (plotDataAssignments.length > 0) {
-    resultsPart = `{"plot_type": "${plotType}", "data": {${plotDataAssignments.join(
+    resultsPart = `{"plot_type": "${plotType}", ${plotDataAssignments.join(
       ", "
-    )}}}`;
+    )}}`;
   }
 
   // Construct the print statement per WidgetOutput
-  lines.push("print(json.dumps({");
+  lines.push("json.dumps({");
   lines.push('  "type": "widget",');
   lines.push('  "content": {');
   lines.push('    "header": "INTERACTIVE_PLOT",');
@@ -122,7 +129,7 @@ export function generatePythonSnippet(
   lines.push(`    "directives": ${directivesJson},`);
   lines.push(`    "results": ${resultsPart}`);
   lines.push("  }");
-  lines.push("}))");
+  lines.push("})");
 
   // Join all the lines with newline characters.
   return lines.join("\n");
