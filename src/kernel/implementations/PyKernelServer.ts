@@ -84,6 +84,9 @@ export class PyKernelServer implements ILanguageServer {
       return;
     }
 
+    // update directives for block state
+    blockState.directives = parseRes.directives;
+
     // if "errors" is not empty, we send them all to webview
     if (parseRes.errors.length > 0) {
       blockState.metadata.status = "error";
@@ -134,9 +137,10 @@ export class PyKernelServer implements ILanguageServer {
     docPath: string,
     drafty_id: string,
     updates: Map<string, number | string>,
-    panel: vscode.WebviewPanel
+    panel: vscode.WebviewPanel,
+    blockInSession?: CodeBlockExecution
   ) {
-    const blockInSession = StateManager.getInstance()
+    if (!blockInSession) blockInSession = StateManager.getInstance()
       .getSession(docPath)
       ?.codeBlocks.get(drafty_id);
     if (!blockInSession) {

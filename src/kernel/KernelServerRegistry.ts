@@ -38,7 +38,8 @@ export interface ILanguageServer {
     docPath: string,
     drafty_id: string,
     updates: Map<string, number | string>,
-    panel?: vscode.WebviewPanel
+    panel?: vscode.WebviewPanel,
+    blockInSession?: CodeBlockExecution
   ): Promise<void>;
 }
 

@@ -57,7 +57,7 @@ function cloneDirectives(directives: Directives) {
  *       "drafty_id": "my_drafty_id",
  *       "command": "init",
  *       "directives": { ... },
- *       "results": {"plot_type": "surface", "args": {"x":x, "y":y}, "data": {"z": z}}
+ *       "results": [{"plot_type": "surface", "args": {"x":x, "y":y}, "data": {"z": z}}]
  *     }
  *   })
  *
@@ -67,7 +67,8 @@ function cloneDirectives(directives: Directives) {
  */
 export function generatePythonSnippet(
   directives: Directives,
-  drafty_id: string
+  drafty_id: string,
+  command?: "init" | "update"
 ): string {
   const lines: string[] = [];
   // Begin with the json import.
@@ -114,11 +115,11 @@ export function generatePythonSnippet(
   const directivesJson = JSON.stringify(directivesClone);
 
   // Build the results part.
-  let resultsPart = "{}";
+  let resultsPart = [];
   if (plotDataAssignments.length > 0) {
-    resultsPart = `{"plot_type": "${plotType}", ${plotDataAssignments.join(
+    resultsPart.push(`{"plot_type": "${plotType}", ${plotDataAssignments.join(
       ", "
-    )}}`;
+    )}}`);
   }
 
   // Construct the print statement per WidgetOutput
@@ -127,9 +128,9 @@ export function generatePythonSnippet(
   lines.push('  "content": {');
   lines.push('    "header": "INTERACTIVE_PLOT",');
   lines.push(`    "drafty_id": "${drafty_id}",`);
-  lines.push('    "command": "init",');
+  lines.push(`    "command": "${command??"init"}",`);
   lines.push(`    "directives": ${directivesJson},`);
-  lines.push(`    "results": ${resultsPart}`);
+  lines.push(`    "results": [${resultsPart.join(', ')}]`);
   lines.push("  }");
   lines.push("})");
 

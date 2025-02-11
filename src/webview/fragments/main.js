@@ -302,18 +302,38 @@ function updateBlockOutput(blockId, output) {
     textDiv.textContent = output.content;
     outputsDiv.appendChild(textDiv);
   } else if (output.type === "widget") {
-    // TODO: add handler to interactive updates
     let command = output.content.command; // per type WidgetOutput
+
     let widgetWrapper = outputsDiv.querySelector(".widget-output");
-    if(widgetWrapper && command === "init"){
+    if (!widgetWrapper) {
+      widgetWrapper = document.createElement("div");
+      widgetWrapper.className = "widget-output";
+      widgetWrapper = outputsDiv.appendChild(widgetWrapper);
+    }
+
+    if(command === "init"){
       // per arrangement in webviewManager.createOutputHtml
       widgetWrapper.innerHTML = "";
       let widgetControls = document.createElement("div");
       widgetControls.className = "widget-controls";
       for(const control of output.content.directives.controls){
-        createControlElement(widgetControls, control);
+        let singleCtrl = document.createElement("div");
+        singleCtrl.className = "widget-control"
+        singleCtrl.id = `pctrl-[${control.param}]-${blockId}`;
+        createControlElement(singleCtrl, control, blockId);
+        widgetControls.appendChild(singleCtrl);
       }
       widgetWrapper.appendChild(widgetControls);
+
+      let resultWrapper = document.createElement("div");
+      resultWrapper.className = "widget-plot";
+      resultWrapper.innerText = JSON.stringify(output.content.results);
+      widgetWrapper.appendChild(resultWrapper);
+
+    } else if (command === "update") {
+      let widgetPlotElm = widgetWrapper.querySelector(".widget-plot");
+      if(widgetPlotElm) widgetPlotElm.innerText = JSON.stringify(output.content.results);
+      widgetWrapper.appendChild(widgetPlotElm);
     }
 
   } else if (output.type === "image") {
@@ -348,6 +368,18 @@ function updateBlockOutput(blockId, output) {
   }
 }
 
+function simpleDebounce(callback, delay) {
+  let timer;
+  return function(...args) {
+    // Clear the previous timer if any
+    clearTimeout(timer);
+    // Set a new timer
+    timer = setTimeout(() => {
+      callback.apply(this, args);
+    }, delay);
+  };
+}
+
 /**
  * Creates an HTML element for a given control.
  *
@@ -358,48 +390,94 @@ function updateBlockOutput(blockId, output) {
  * @param control - The control configuration.
  * @returns A container HTMLElement that includes a label and the control element.
  */
-function createControlElement(container, control) {
+function createControlElement(container, control, drafty_id) {
   // Create a label element
   const label = document.createElement("label");
   label.textContent = control.param;
-  label.htmlFor = control.param;
-  container.appendChild(label);
+  label.htmlFor = container.id + "-gui";
 
   let controlElement;
 
   // Create the control element based on its type
+  controlElement = document.createElement("input");
   if (control.type === "slider") {
     // Create a slider (range input)
-    controlElement = document.createElement("input");
     controlElement.setAttribute("type", "range");
-    controlElement.id = control.param;
+    controlElement.id = container.id + "-gui";
     controlElement.setAttribute("min", control.min.toString());
     controlElement.setAttribute("max", control.max.toString());
     if (control.step !== undefined) {
       controlElement.setAttribute("step", control.step.toString());
+    } else {
+      controlElement.setAttribute("step", ((control.max - control.min)/50).toString());
     }
-  } else if (control.type === "number") {
-    // Create a number input
-    controlElement = document.createElement("input");
-    controlElement.setAttribute("type", "number");
-    controlElement.id = control.param;
-  } else if (control.type === "options") {
-    // Create a select element with options
-    controlElement = document.createElement("select");
-    controlElement.id = control.param;
-    if (control.options && control.options.length > 0) {
-      control.options.forEach((option) => {
-        const optionEl = document.createElement("option");
-        optionEl.value = option;
-        optionEl.textContent = option;
-        controlElement.appendChild(optionEl);
+    if(control.current){
+      controlElement.value = control.current;
+    } else {
+      controlElement.value = (control.min+control.max)/2;
+    }
+    const valueDisplay = document.createElement('span');
+    valueDisplay.textContent = controlElement.value;
+
+    controlElement.addEventListener('input', simpleDebounce(function() {
+      valueDisplay.textContent = controlElement.value;
+      vscode.postMessage({
+        command:"runDirectiveUpdate", 
+        msg: {
+          drafty_id, 
+          param: control.param, 
+          current: controlElement.value
+        }
+      });
+    }, 100));
+
+    container.appendChild(label);
+    container.appendChild(controlElement);
+    container.appendChild(valueDisplay);
+
+  } else {
+    if (control.type === "number") {
+      // Create a number input
+      controlElement.setAttribute("type", "number");
+      controlElement.id = container.id + "-gui";
+
+      controlElement.addEventListener('input', simpleDebounce(function(evt) {
+        vscode.postMessage({
+          command:"runDirectiveUpdate", 
+          msg: {
+            drafty_id, 
+            param: control.param, 
+            current: evt.target.value
+          }
+        });
+      }, 600));
+    } else if (control.type === "options") {
+      // Create a select element with options
+      controlElement = document.createElement("select");
+      controlElement.id = container.id + "-gui";
+      if (control.options && control.options.length > 0) {
+        control.options.forEach((option) => {
+          const optionEl = document.createElement("option");
+          optionEl.value = option;
+          optionEl.textContent = option;
+          controlElement.appendChild(optionEl);
+        });
+      }
+      controlElement.addEventListener('change', function(event) {
+        vscode.postMessage({
+          command:"runDirectiveUpdate", 
+          msg: {
+            drafty_id, 
+            param: control.param, 
+            current: event.target.value
+          }
+        });
       });
     }
+    container.appendChild(label);
+    container.appendChild(controlElement);
   }
 
-  controlElement.className = "widget-control";
-
-  container.appendChild(controlElement);
   return container;
 }
 

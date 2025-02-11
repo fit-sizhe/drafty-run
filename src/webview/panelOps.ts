@@ -6,6 +6,7 @@ import { KernelServerRegistry } from "../kernel/KernelServerRegistry";
 import { StateManager } from "../managers/StateManager";
 import { EnvironmentManager } from "../managers/EnvironmentManager";
 import { WebviewManager } from "./WebviewManager";
+import { Input, Slider } from "../parser/directives";
 
 export namespace panelOps {
   export function updatePanel(docPath: string) {
@@ -20,16 +21,17 @@ export namespace panelOps {
     webviewManager.updateContent(
       docPath,
       session.codeBlocks,
-      session.bellyGroups??[],
+      session.bellyGroups ?? [],
       envManager.getEnvironments(),
-      envManager.getSelectedBin(docPath),
+      envManager.getSelectedBin(docPath)
     );
   }
 
   export function panelDisposedCallback(docPath: string) {
     console.log(`Panel for docPath: ${docPath} disposed.`);
 
-    const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
+    const pythonAdapter =
+      KernelServerRegistry.getInstance().getRunner("python");
     pythonAdapter?.disposeServer(docPath);
 
     StateManager.getInstance().removeSession(docPath);
@@ -39,26 +41,45 @@ export namespace panelOps {
   export async function handleWebviewMessage(
     message: any,
     _context: vscode.ExtensionContext,
-    panel: vscode.WebviewPanel,
+    panel: vscode.WebviewPanel
   ) {
     const envManager = EnvironmentManager.getInstance();
     const webviewManager = WebviewManager.getInstance();
     const stateManager = StateManager.getInstance();
-    const pythonManager = KernelServerRegistry.getInstance().getRunner("python");
+    const pythonManager =
+      KernelServerRegistry.getInstance().getRunner("python");
 
     const docPath = webviewManager.getDocPathForPanel(panel);
     if (!docPath) {
       vscode.window.showErrorMessage(
-        "Cannot determine which file triggered the webview message.",
+        "Cannot determine which file triggered the webview message."
       );
       return;
     }
 
     switch (message.command) {
-      case "debug":{
+      case "debug": {
         console.log(message);
         break;
       }
+
+      case "runDirectiveUpdate": {
+        let msg = message.msg;
+        let block = stateManager
+          .getSession(docPath)
+          ?.codeBlocks.get(msg.drafty_id);
+        let newCurrents = new Map<string, string | number>();
+        newCurrents.set(msg.param, msg.current);
+        await pythonManager?.runDirectiveUpdate(
+          docPath,
+          msg.drafty_id,
+          newCurrents,
+          panel,
+          block
+        );
+        break;
+      }
+
       case "changeEnv": {
         if (pythonManager) {
           pythonManager.disposeServer(docPath);
@@ -66,7 +87,7 @@ export namespace panelOps {
         }
         envManager.setSelectedPath(message.pythonPath, docPath);
         vscode.window.showInformationMessage(
-          `Switched to: ${message.pythonPath}`,
+          `Switched to: ${message.pythonPath}`
         );
         break;
       }
@@ -80,8 +101,8 @@ export namespace panelOps {
         await webviewManager.getPanel(docPath)?.webview.postMessage({
           command: "updateEnvOptions",
           envs: envManager.getEnvironments(),
-          selected: newBin
-        })
+          selected: newBin,
+        });
         if (curBin !== newBin && pythonManager) {
           pythonManager.disposeServer(docPath);
           pythonManager.startProcessForDoc(docPath, newBin);
@@ -114,7 +135,7 @@ export namespace panelOps {
         stateManager.clearSession(docPath);
         updatePanel(docPath);
         vscode.window.showInformationMessage(
-          `Cleared state for doc: ${path.basename(docPath)}`,
+          `Cleared state for doc: ${path.basename(docPath)}`
         );
         break;
       }

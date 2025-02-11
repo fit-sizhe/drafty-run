@@ -36,6 +36,7 @@
       border: 1px solid var(--vscode-panel-border);
       border-radius: 4px;
       overflow: hidden;
+      min-width: 450px;
     }
     .block-header {
       padding: 5px 10px;
@@ -55,6 +56,7 @@
     }
     .block-outputs {
       padding: 10px;
+      overflow: scroll;
     }
     .output {
       margin-bottom: 10px;
@@ -75,21 +77,34 @@
     .widget-controls {
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: stretch;
       width: 95%;
       margin: 5px;
       padding: 4px;
-      border: 1px solid var(--vscode-button-foreground);
     }
     .widget-control {
       font-family: var(--vscode-editor-font-family);
       font-size: 0.8rem;
-      flex: 1;
+      display: flex;
+      align-items: stretch;
+      gap: 1em;
       color: var(--vscode-input-foreground);
       background-color: var(--vscode-input-background);
       border: 1px solid var(--vscode-button-background);
       padding: 4px 6px;
       border-radius: 3px;
+    }
+    .widget-control label {
+      flex: 1;
+      margin-right: 10px;
+    }
+    .widget-control input[type="range"] {
+      flex: 8;
+      margin-right: 10px;
+    }
+    .widget-control span {
+      flex: 1;
+      text-align: right;
     }
     .widget-plot {
       width: 100%;

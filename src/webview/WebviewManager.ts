@@ -251,7 +251,8 @@ export class WebviewManager {
         if (aId && bId) {
           if (aId.belly !== bId.belly) {
             return (
-              sortedBellies.indexOf(aId.belly) - sortedBellies.indexOf(bId.belly)
+              sortedBellies.indexOf(aId.belly) -
+              sortedBellies.indexOf(bId.belly)
             );
           }
           return aId.tail - bId.tail;
@@ -264,7 +265,11 @@ export class WebviewManager {
       .join("\n");
 
     // Load template from disk
-    const htmlPath = vscode.Uri.joinPath(extensionUri, "assets", "template.html");
+    const htmlPath = vscode.Uri.joinPath(
+      extensionUri,
+      "assets",
+      "template.html"
+    );
     const templateHtml = fs.readFileSync(htmlPath.fsPath, "utf-8");
 
     // The path to the bundled JS (e.g. "dist/main.js" from esbuild)
@@ -304,7 +309,14 @@ export class WebviewManager {
     }
 
     const blockContainerId = `result-block-${containerKey}`;
-    const outputsHtml = block.outputs.map((o) => this.createOutputHtml(o)).join("\n");
+    const outputsHtml = block.outputs
+      .map((o) =>
+        this.createOutputHtml(
+          o,
+          block.metadata.bindingId ?? "block-" + block.position
+        )
+      )
+      .join("\n");
 
     return `
       <div class="block-container ${statusClass}"
@@ -325,20 +337,28 @@ export class WebviewManager {
   /**
    * Render a single CellOutput as HTML
    */
-  private createOutputHtml(output: CellOutput): string {
+  private createOutputHtml(output: CellOutput, drafty_id: string): string {
     switch (output.type) {
       case "text":
         return `
-          <div class="output text-output ${output.stream || ""}">${this.escapeHtml(output.content)}</div>`;
+          <div class="output text-output ${
+            output.stream || ""
+          }">${this.escapeHtml(output.content)}</div>`;
       case "widget":
-        // TODO: arrange widget-plot element
-        let controls = output.content.directives.controls.map(this.createControlHtml).join('\n');
+        // TODO: arrange widget-plot element()
+        let controls = output.content.directives?.controls
+          .map((c) => this.createControlHtml(c, drafty_id))
+          .join("\n");
         return `
           <div class="output widget-output">
-            <div class="widget-controls" id="widget-controls-${output.content.drafty_id}">
+            <div class="widget-controls" id="widget-controls-${
+              output.content.drafty_id
+            }">
               ${controls}
             </div>
-            <div class="widget-plot" id="widget-plot-${output.content.drafty_id}">
+            <div class="widget-plot" id="widget-plot-${
+              output.content.drafty_id
+            }">
               ${JSON.stringify(output.content.results)}
             </div>
           </div>`;
@@ -370,26 +390,32 @@ export class WebviewManager {
    * - For an Input with type "number", it creates an `<input type="number">` element.
    * - For an Input with type "options", it creates a `<select>` element with `<option>` children.
    */
-  private createControlHtml(control: Input | Slider): string {
+  private createControlHtml(
+    control: Input | Slider,
+    drafty_id: string
+  ): string {
     // Start the container div and add a label
-    let html = `<div class="widget-control">`;
-    html += `<label for="${control.param}">${control.param}</label>`;
+    let html = `<div class="widget-control" id="pctrl-[${control.param}]-${drafty_id}">`;
+    html += `<label for="pctrl-[${control.param}]-${drafty_id}-gui">${control.param}</label>`;
 
     // Generate the control element based on its type
     if (control.type === "slider") {
       // Create a slider (range input)
-      html += `<input type="range" id="control-${control.param}" name="${control.param}" ` +
-              `min="${control.min}" max="${control.max}"` +
-              (control.step !== undefined ? ` step="${control.step}"` : "") +
-              `>`;
+      html +=
+        `<input type="range" id="pctrl-[${control.param}]-${drafty_id}-gui" name="${control.param}" ` +
+        `min="${control.min}" max="${control.max}"` +
+        (control.step !== undefined
+          ? ` step="${control.step}"`
+          : `step="${(control.max - control.min) / 50}"`) +
+        `>`;
     } else if (control.type === "number") {
       // Create a number input
-      html += `<input type="number" id="control-${control.param}" name="${control.param}">`;
+      html += `<input type="number" id="pctrl-[${control.param}]-${drafty_id}-gui" name="${control.param}">`;
     } else if (control.type === "options") {
       // Create a select element with options
-      html += `<select id="control-${control.param}" name="${control.param}">`;
+      html += `<select id="pctrl-[${control.param}]-${drafty_id}-gui" name="${control.param}">`;
       if (control.options && control.options.length > 0) {
-        control.options.forEach(option => {
+        control.options.forEach((option) => {
           html += `<option value="${option}">${option}</option>`;
         });
       }

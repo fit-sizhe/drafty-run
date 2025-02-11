@@ -36,8 +36,9 @@ export interface RichOutput extends BaseOutput {
 // types for updates to interactive plot
 type UpdateRes = {
   plot_type: "scatter" | "surface" | "curve", 
-  // calculated name -> data
-  data: Map<string,any>};
+  args: Map<string, any>,
+  data: Map<string, any>
+}
 
 export interface WidgetOutput extends BaseOutput {
   type: "widget";
@@ -47,7 +48,7 @@ export interface WidgetOutput extends BaseOutput {
     drafty_id: string,
     command: "init" | "update",
     directives?: Directives,
-    results: UpdateRes
+    results: UpdateRes[]
   };
 }
 
