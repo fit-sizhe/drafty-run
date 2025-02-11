@@ -1,4 +1,6 @@
 import { Directives } from "../parser/directives";
+import { ParseError } from "../parser/directives";
+import { ErrorOutput } from "../types";
 /**
  * Converts a Map to a plain object so that it can be JSON‑stringified.
  */
@@ -133,4 +135,15 @@ export function generatePythonSnippet(
 
   // Join all the lines with newline characters.
   return lines.join("\n");
+}
+
+export function convertParseError(parseError: ParseError): ErrorOutput {
+  return {
+    type: "error",
+    timestamp: Date.now(),
+    error: `Error on line ${parseError.line}: ${parseError.message}`,
+    traceback: [
+      `Directive: ${parseError.directive}`
+    ]
+  };
 }
