@@ -154,8 +154,8 @@ export namespace commands {
     );
     webviewManager.revealPanel(docPath);
 
-    // 3. Extract Code, Metadata, and Directives Before Changes
-    // TODO: separate code and directive extraction
+    // 3. Extract Code and Metadata Before Changes
+    // directive extraction is bundled in runDirectiveInit/runDirectiveUpdate
     const {code, language, title} = findMetaForRange(editor.document, range);
 
 
@@ -236,7 +236,12 @@ export namespace commands {
         code, 
         blockInSession,webviewManager.getPanel(docPath));
       blockInSession.metadata.status = "success";
-      // TODO: if directives!= undefined, build comm btw webview element<->kernel for interactive GUI
+      // status might be set to "error" in runDirectiveInit
+      await server.runDirectiveInit(
+        docPath,
+        code,
+        blockInSession,
+        webviewManager.getPanel(docPath));
     } catch(error) {
       const errStr = error instanceof Error ? error.message : String(error);
       blockInSession.outputs = [
