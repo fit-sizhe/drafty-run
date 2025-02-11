@@ -1,16 +1,19 @@
 import * as path from "path";
 import * as vscode from "vscode";
-import { CellOutput, CodeBlockExecution } from "../../types";
+import { CellOutput, CodeBlockExecution, TextOutput, WidgetOutput } from "../../types";
 import { PythonKernel } from "./PythonKernel";
 import { ILanguageServer } from "../KernelServerRegistry";
+import { parseDirectivesFromStr } from "../../parser/directives";
+import {
+  convertParseError,
+  generatePythonSnippet,
+} from "../../utils/widgetUtils";
+import { StateManager } from "../../managers/StateManager";
 
 export class PyKernelServer implements ILanguageServer {
   private kernels = new Map<string, PythonKernel>();
 
-  async startProcessForDoc(
-    docPath: string,
-    envPath: string,
-  ) {
+  async startProcessForDoc(docPath: string, envPath: string) {
     if (this.kernels.has(docPath)) {
       // Kernel already started for this document.
       return;
@@ -24,7 +27,7 @@ export class PyKernelServer implements ILanguageServer {
   executeCode(
     docPath: string,
     code: string,
-    onPartialOutput?: (output: CellOutput) => void,
+    onPartialOutput?: (output: CellOutput) => void
   ) {
     const kernel = this.kernels.get(docPath);
     if (!kernel) {
@@ -40,13 +43,11 @@ export class PyKernelServer implements ILanguageServer {
     blockState: CodeBlockExecution,
     panel?: vscode.WebviewPanel
   ) {
-
     const onPartialOutput = (partialOutput: CellOutput) => {
-
       if (partialOutput.type === "image") {
         // Overwrite old images from the same run
         const oldImageIndex = blockState.outputs.findIndex(
-          (o) => o.type === "image",
+          (o) => o.type === "image"
         );
         if (oldImageIndex !== -1) {
           blockState.outputs[oldImageIndex] = partialOutput;
@@ -63,11 +64,123 @@ export class PyKernelServer implements ILanguageServer {
       });
     };
 
-    await this.executeCode(
-      docPath,
-      code,
-      onPartialOutput,
+    await this.executeCode(docPath, code, onPartialOutput);
+  }
+
+  /*
+   ** parse directives,
+   ** send generated code to kernel, and
+   ** relay results(type=="init") to webview;
+   ** should be only used in commands.ts
+   */
+  async runDirectiveInit(
+    docPath: string,
+    code: string,
+    blockState: CodeBlockExecution,
+    panel: vscode.WebviewPanel
+  ): Promise<void> {
+    const parseRes = parseDirectivesFromStr(code);
+    if (!parseRes.directives) {
+      return;
+    }
+
+    // if "errors" is not empty, we send them all to webview
+    if (parseRes.errors.length > 0) {
+      blockState.metadata.status = "error";
+      for (const err of parseRes.errors) {
+        let errOutput = convertParseError(err);
+        blockState.outputs.push(errOutput);
+        await panel.webview.postMessage({
+          command: "partialOutput",
+          blockId: blockState.metadata.bindingId,
+          output: errOutput,
+        });
+      }
+      return;
+    }
+
+    // if no error, generate code snippet for execution
+    const initSnippet = generatePythonSnippet(
+      parseRes.directives,
+      blockState.metadata.bindingId!
     );
+    const onData = (output: CellOutput) => {
+      if (output.type == "text") {
+        let content = JSON.parse(output.content.slice(1, -1));
+        let widgetOpt: WidgetOutput = {
+          timestamp: output.timestamp,
+          ...content
+        }
+        blockState.outputs.push(widgetOpt);
+        panel.webview.postMessage({
+          command: "partialOutput",
+          blockId: blockState.metadata.bindingId,
+          output: widgetOpt,
+        });
+      }
+    };
+
+    // run generated code
+    await this.executeCode(docPath, initSnippet, onData);
+  }
+
+  /*
+   ** update current values of directives,
+   ** send generated code to kernel, and
+   ** relay results(type=="update") to webview;
+   ** should be only used in panelOps.handleWebviewMessage
+   */
+  async runDirectiveUpdate(
+    docPath: string,
+    drafty_id: string,
+    updates: Map<string, number | string>,
+    panel: vscode.WebviewPanel
+  ) {
+    const blockInSession = StateManager.getInstance()
+      .getSession(docPath)
+      ?.codeBlocks.get(drafty_id);
+    if (!blockInSession) {
+      vscode.window.showErrorMessage(
+        `No info found for the block: ${drafty_id}!`
+      );
+      return;
+    }
+    if (!blockInSession.directives) {
+      vscode.window.showErrorMessage(
+        `No directive found for the block: ${drafty_id}!`
+      );
+      return;
+    }
+
+    // update current values in control directives
+    for (const param of updates.keys()) {
+      for (const ctrl of blockInSession.directives.controls) {
+        if (ctrl.param === param) ctrl.current = updates.get(param)!;
+      }
+    }
+    const updateSnippet = generatePythonSnippet(
+      blockInSession.directives,
+      drafty_id,
+      "update"
+    );
+
+    const onData = (output: CellOutput) => {
+      if (output.type == "text") {
+        let content = JSON.parse(output.content.slice(1, -1));
+        let widgetOpt: WidgetOutput = {
+          timestamp: output.timestamp,
+          ...content
+        }
+        blockInSession.outputs.push(widgetOpt);
+        panel.webview.postMessage({
+          command: "partialOutput",
+          blockId: blockInSession.metadata.bindingId,
+          output: widgetOpt,
+        });
+      }
+    };
+
+    await this.executeCode(docPath, updateSnippet, onData);
   }
 
   async terminateExecution(docPath: string): Promise<void> {
