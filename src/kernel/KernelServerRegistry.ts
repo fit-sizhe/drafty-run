@@ -26,6 +26,20 @@ export interface ILanguageServer {
         code: string,
         blockState: CodeBlockExecution,
         panel?: vscode.WebviewPanel): Promise<void>; // being called in commands.ts
+  // relay execution result to webview for interactive plot init
+  runDirectiveInit(
+    docPath: string,
+    code: string,
+    blockState: CodeBlockExecution,
+    panel?: vscode.WebviewPanel
+  ): Promise<void>;
+  // relay execution result to webview for interactive plot updates
+  runDirectiveUpdate(
+    docPath: string,
+    drafty_id: string,
+    updates: Map<string, number | string>,
+    panel?: vscode.WebviewPanel
+  ): Promise<void>;
 }
 
 // Registry for language servers
