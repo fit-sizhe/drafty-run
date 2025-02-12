@@ -91,7 +91,16 @@ export class PyKernelServer implements ILanguageServer {
           timestamp: output.timestamp,
           ...content,
         };
-        block.outputs.push(widgetOpt);
+        // make sure the first item is the only widgetOpt
+        if (block.outputs.length == 0) {
+          block.outputs.push(widgetOpt);
+        } else {
+          if (block.outputs[0].type == "widget") {
+            block.outputs[0] = widgetOpt;
+          }else {
+            block.outputs = [widgetOpt, ...block.outputs];
+          }
+        }
         panel.webview.postMessage({
           command: "partialOutput",
           blockId: block.metadata.bindingId,
