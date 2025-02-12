@@ -36,8 +36,8 @@ export interface RichOutput extends BaseOutput {
 // types for updates to interactive plot
 type UpdateRes = {
   plot_type: "scatter" | "surface" | "curve", 
-  args: Map<string, any>,
-  data: Map<string, any>
+  args: Map<string, number[]>,
+  data: Map<string, number[] | number[][]> // 1d/2d arrays
 }
 
 export interface WidgetOutput extends BaseOutput {

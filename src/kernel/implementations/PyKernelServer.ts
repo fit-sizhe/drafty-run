@@ -143,11 +143,18 @@ export class PyKernelServer implements ILanguageServer {
       return;
     }
 
+    if (
+      parseRes.directives.plot_executes.length == 0 ||
+      parseRes.directives.controls.length == 0
+    )
+      return;
+
     // if no error, generate code snippet for execution
     const initSnippet = generatePythonSnippet(
       parseRes.directives,
       blockState.metadata.bindingId!
     );
+    console.log(initSnippet);
     const onData = this.createOnDataCallback(blockState, panel);
 
     // run generated code
@@ -177,7 +184,11 @@ export class PyKernelServer implements ILanguageServer {
       );
       return;
     }
-    if (!blockInSession.directives) {
+    if (
+      !blockInSession.directives ||
+      blockInSession.directives?.controls.length == 0 ||
+      blockInSession.directives?.plot_executes.length == 0
+    ) {
       vscode.window.showErrorMessage(
         `No directive found for the block: ${drafty_id}!`
       );
