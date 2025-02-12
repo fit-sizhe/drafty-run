@@ -22,7 +22,7 @@ async function main() {
   });
 
   const webviewConfig = await esbuild.context({
-    entryPoints: ['src/webview/fragments/main.js'],
+    entryPoints: ['src/webview/fragments/main.ts'],
     bundle: true,
     format: 'esm',
     platform: 'browser',

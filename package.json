@@ -75,6 +75,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/plotly.js": "^2.35.2",
     "@types/uuid": "^10.0.0",
     "@types/vscode": "^1.96.0",
     "@typescript-eslint/eslint-plugin": "^8.17.0",
@@ -88,6 +89,7 @@
   },
   "dependencies": {
     "markdown-it": "^14.1.0",
+    "plotly.js-dist": "^3.0.0",
     "uuid": "^9.0.1",
     "zeromq": "^6.3.0"
   }

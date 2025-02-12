@@ -154,7 +154,6 @@ export class PyKernelServer implements ILanguageServer {
       parseRes.directives,
       blockState.metadata.bindingId!
     );
-    console.log(initSnippet);
     const onData = this.createOnDataCallback(blockState, panel);
 
     // run generated code
