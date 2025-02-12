@@ -1,6 +1,11 @@
 import * as path from "path";
 import * as vscode from "vscode";
-import { CellOutput, CodeBlockExecution, TextOutput, WidgetOutput } from "../../types";
+import {
+  CellOutput,
+  CodeBlockExecution,
+  TextOutput,
+  WidgetOutput,
+} from "../../types";
 import { PythonKernel } from "./PythonKernel";
 import { ILanguageServer } from "../KernelServerRegistry";
 import { parseDirectivesFromStr } from "../../parser/directives";
@@ -67,6 +72,42 @@ export class PyKernelServer implements ILanguageServer {
     await this.executeCode(docPath, code, onPartialOutput);
   }
 
+  /**
+   * Creates a callback function to handle cell outputs in runDirectiveInit
+   * and runDirectiveUpdate
+   *
+   * @param block - The code block execution state (either blockState or blockInSession).
+   * @param panel - The webview panel to send messages to.
+   * @returns A function that handles CellOutput objects.
+   */
+  private createOnDataCallback(
+    block: CodeBlockExecution,
+    panel: vscode.WebviewPanel
+  ): (output: CellOutput) => void {
+    return (output: CellOutput) => {
+      if (output.type === "text") {
+        const content = JSON.parse(output.content.slice(1, -1));
+        const widgetOpt: WidgetOutput = {
+          timestamp: output.timestamp,
+          ...content,
+        };
+        block.outputs.push(widgetOpt);
+        panel.webview.postMessage({
+          command: "partialOutput",
+          blockId: block.metadata.bindingId,
+          output: widgetOpt,
+        });
+      } else {
+        block.outputs.push(output);
+        panel.webview.postMessage({
+          command: "partialOutput",
+          blockId: block.metadata.bindingId,
+          output: output,
+        });
+      }
+    };
+  }
+
   /*
    ** parse directives,
    ** send generated code to kernel, and
@@ -107,21 +148,7 @@ export class PyKernelServer implements ILanguageServer {
       parseRes.directives,
       blockState.metadata.bindingId!
     );
-    const onData = (output: CellOutput) => {
-      if (output.type == "text") {
-        let content = JSON.parse(output.content.slice(1, -1));
-        let widgetOpt: WidgetOutput = {
-          timestamp: output.timestamp,
-          ...content
-        }
-        blockState.outputs.push(widgetOpt);
-        panel.webview.postMessage({
-          command: "partialOutput",
-          blockId: blockState.metadata.bindingId,
-          output: widgetOpt,
-        });
-      }
-    };
+    const onData = this.createOnDataCallback(blockState, panel);
 
     // run generated code
     await this.executeCode(docPath, initSnippet, onData);
@@ -140,9 +167,10 @@ export class PyKernelServer implements ILanguageServer {
     panel: vscode.WebviewPanel,
     blockInSession?: CodeBlockExecution
   ) {
-    if (!blockInSession) blockInSession = StateManager.getInstance()
-      .getSession(docPath)
-      ?.codeBlocks.get(drafty_id);
+    if (!blockInSession)
+      blockInSession = StateManager.getInstance()
+        .getSession(docPath)
+        ?.codeBlocks.get(drafty_id);
     if (!blockInSession) {
       vscode.window.showErrorMessage(
         `No info found for the block: ${drafty_id}!`
@@ -168,21 +196,7 @@ export class PyKernelServer implements ILanguageServer {
       "update"
     );
 
-    const onData = (output: CellOutput) => {
-      if (output.type == "text") {
-        let content = JSON.parse(output.content.slice(1, -1));
-        let widgetOpt: WidgetOutput = {
-          timestamp: output.timestamp,
-          ...content
-        }
-        blockInSession.outputs.push(widgetOpt);
-        panel.webview.postMessage({
-          command: "partialOutput",
-          blockId: blockInSession.metadata.bindingId,
-          output: widgetOpt,
-        });
-      }
-    };
+    const onData = this.createOnDataCallback(blockInSession, panel);
 
     await this.executeCode(docPath, updateSnippet, onData);
   }

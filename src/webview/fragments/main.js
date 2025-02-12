@@ -293,78 +293,87 @@ function updateBlockOutput(blockId, output) {
   const outputsDiv = blockContainer.querySelector(".block-outputs");
   if (!outputsDiv) return;
 
-  if (output.type === "text") {
-    const textDiv = document.createElement("div");
-    textDiv.classList.add("output", "text-output");
-    if (output.stream) {
-      textDiv.classList.add(output.stream);
-    }
-    textDiv.textContent = output.content;
-    outputsDiv.appendChild(textDiv);
-  } else if (output.type === "widget") {
-    let command = output.content.command; // per type WidgetOutput
-
-    let widgetWrapper = outputsDiv.querySelector(".widget-output");
-    if (!widgetWrapper) {
-      widgetWrapper = document.createElement("div");
-      widgetWrapper.className = "widget-output";
-      widgetWrapper = outputsDiv.appendChild(widgetWrapper);
-    }
-
-    if(command === "init"){
-      // per arrangement in webviewManager.createOutputHtml
-      widgetWrapper.innerHTML = "";
-      let widgetControls = document.createElement("div");
-      widgetControls.className = "widget-controls";
-      for(const control of output.content.directives.controls){
-        let singleCtrl = document.createElement("div");
-        singleCtrl.className = "widget-control"
-        singleCtrl.id = `pctrl-[${control.param}]-${blockId}`;
-        createControlElement(singleCtrl, control, blockId);
-        widgetControls.appendChild(singleCtrl);
+  switch (output.type) { 
+    case "text":
+      const textDiv = document.createElement("div");
+      textDiv.classList.add("output", "text-output");
+      if (output.stream) {
+        textDiv.classList.add(output.stream);
       }
-      widgetWrapper.appendChild(widgetControls);
+      textDiv.textContent = output.content;
+      outputsDiv.appendChild(textDiv);
+      break;
+    case "widget":
+      let command = output.content.command; // per type WidgetOutput
 
-      let resultWrapper = document.createElement("div");
-      resultWrapper.className = "widget-plot";
-      resultWrapper.innerText = JSON.stringify(output.content.results);
-      widgetWrapper.appendChild(resultWrapper);
+      let widgetWrapper = outputsDiv.querySelector(".widget-output");
+      if (!widgetWrapper) {
+        widgetWrapper = document.createElement("div");
+        widgetWrapper.className = "widget-output";
+        widgetWrapper = outputsDiv.appendChild(widgetWrapper);
+      }
 
-    } else if (command === "update") {
-      let widgetPlotElm = widgetWrapper.querySelector(".widget-plot");
-      if(widgetPlotElm) widgetPlotElm.innerText = JSON.stringify(output.content.results);
-      widgetWrapper.appendChild(widgetPlotElm);
-    }
+      if(command === "init"){
+        // per arrangement in webviewManager.createOutputHtml
+        widgetWrapper.innerHTML = "";
+        let widgetControls = document.createElement("div");
+        widgetControls.className = "widget-controls";
+        for(const control of output.content.directives.controls){
+          let singleCtrl = document.createElement("div");
+          singleCtrl.className = "widget-control"
+          singleCtrl.id = `pctrl-[${control.param}]-${blockId}`;
+          createControlElement(singleCtrl, control, blockId);
+          widgetControls.appendChild(singleCtrl);
+        }
+        widgetWrapper.appendChild(widgetControls);
 
-  } else if (output.type === "image") {
-    let imgWrapper = outputsDiv.querySelector(".image-output");
-    if (!imgWrapper) {
-      imgWrapper = document.createElement("div");
-      imgWrapper.classList.add("output", "image-output");
-      outputsDiv.appendChild(imgWrapper);
-    }
-    let imgEl = imgWrapper.querySelector("img.live-plot");
-    if (!imgEl) {
-      imgEl = document.createElement("img");
-      imgEl.classList.add("live-plot");
-      imgWrapper.appendChild(imgEl);
-    }
-    const format = output.format || "png";
-    imgEl.src = "data:image/" + format + ";base64," + output.data;
-  } else if (output.type === "error") {
-    const errDiv = document.createElement("div");
-    errDiv.classList.add("output", "error-output");
-    errDiv.textContent = output.error;
-    outputsDiv.appendChild(errDiv);
-  } else if (output.type === "rich") {
-    const richDiv = document.createElement("div");
-    richDiv.classList.add("output", "rich-output");
-    if (output.format === "html") {
-      richDiv.innerHTML = output.content;
-    } else {
-      richDiv.textContent = output.content;
-    }
-    outputsDiv.appendChild(richDiv);
+        let resultWrapper = document.createElement("div");
+        resultWrapper.className = "widget-plot";
+        resultWrapper.id = `pctrl-${blockId}-plot`;
+        resultWrapper.innerText = JSON.stringify(output.content.results);
+        widgetWrapper.appendChild(resultWrapper);
+
+      } else if (command === "update") {
+        let widgetPlotElm = widgetWrapper.querySelector(".widget-plot");
+        if(widgetPlotElm) widgetPlotElm.innerText = JSON.stringify(output.content.results);
+        widgetWrapper.appendChild(widgetPlotElm);
+      }
+      break;
+
+    case "image":
+      let imgWrapper = outputsDiv.querySelector(".image-output");
+      if (!imgWrapper) {
+        imgWrapper = document.createElement("div");
+        imgWrapper.classList.add("output", "image-output");
+        outputsDiv.appendChild(imgWrapper);
+      }
+      let imgEl = imgWrapper.querySelector("img.live-plot");
+      if (!imgEl) {
+        imgEl = document.createElement("img");
+        imgEl.classList.add("live-plot");
+        imgWrapper.appendChild(imgEl);
+      }
+      const format = output.format || "png";
+      imgEl.src = "data:image/" + format + ";base64," + output.data;
+      break;
+
+    case "error":
+      const errDiv = document.createElement("div");
+      errDiv.classList.add("output", "error-output");
+      errDiv.textContent = output.error;
+      outputsDiv.appendChild(errDiv);
+      break;
+
+    case "rich":
+      const richDiv = document.createElement("div");
+      richDiv.classList.add("output", "rich-output");
+      if (output.format === "html") {
+        richDiv.innerHTML = output.content;
+      } else {
+        richDiv.textContent = output.content;
+      }
+      outputsDiv.appendChild(richDiv);
+      break;
   }
 }
 

@@ -91,21 +91,23 @@ export function generatePythonSnippet(
   let plotType = "";
   const plotDataAssignments: string[] = [];
   for (const plotExec of directives.plot_executes) {
-    if(!plotType) {
+    if (!plotType) {
       plotType = plotExec.plot_type;
-    // ignore plot type other than the first found type
+      // ignore plot type other than the first found type
     } else if (plotType != plotExec.plot_type) {
       continue;
     }
     // For each command in the plot directive, assign a variable.
     plotExec.commands.forEach((value, key) => {
+      let resEntry = `{"plot_type": "${plotType}", `;
       // Generate a Python assignment for the command
       if (value.exec != "") lines.push(`${key} = ${value.exec}`);
       // Also prepare the mapping
-      plotDataAssignments.push(`"data": {"${key}": ${key}}`);
+      resEntry += `"data": {"${key}": ${key}}`;
       let args: string[] = [];
       for (const arg of value.args) args.push(`"${arg}": ${arg}`);
-      plotDataAssignments.push(`"args": {${args.join(", ")}}`);
+      resEntry += `, "args": {${args.join(", ")}}}`;
+      plotDataAssignments.push(resEntry);
     });
   }
 
@@ -117,9 +119,7 @@ export function generatePythonSnippet(
   // Build the results part.
   let resultsPart = [];
   if (plotDataAssignments.length > 0) {
-    resultsPart.push(`{"plot_type": "${plotType}", ${plotDataAssignments.join(
-      ", "
-    )}}`);
+    resultsPart.push(`${plotDataAssignments}`);
   }
 
   // Construct the print statement per WidgetOutput
@@ -128,12 +128,13 @@ export function generatePythonSnippet(
   lines.push('  "content": {');
   lines.push('    "header": "INTERACTIVE_PLOT",');
   lines.push(`    "drafty_id": "${drafty_id}",`);
-  lines.push(`    "command": "${command??"init"}",`);
+  lines.push(`    "command": "${command ?? "init"}",`);
   lines.push(`    "directives": ${directivesJson},`);
-  lines.push(`    "results": [${resultsPart.join(', ')}]`);
+  lines.push(`    "results": [${resultsPart.join(", ")}]`);
   lines.push("  }");
   lines.push("})");
 
+  // console.log(lines.join("\n"));
   // Join all the lines with newline characters.
   return lines.join("\n");
 }
@@ -143,8 +144,6 @@ export function convertParseError(parseError: ParseError): ErrorOutput {
     type: "error",
     timestamp: Date.now(),
     error: `Error on line ${parseError.line}: ${parseError.message}`,
-    traceback: [
-      `Directive: ${parseError.directive}`
-    ]
+    traceback: [`Directive: ${parseError.directive}`],
   };
 }
