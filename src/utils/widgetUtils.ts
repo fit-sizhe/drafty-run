@@ -102,7 +102,7 @@ export function generatePythonSnippet(
       let resEntry = `{"plot_type": "${plotType}", `;
       // Generate a Python assignment for the command
       if (value.exec != "") lines.push(`${key} = ${value.exec}`);
-      // Also prepare the mapping
+      // TODO: add generalized serialization method for np/pandas obj
       resEntry += `"data": {"${key}": ${key}}`;
       let args: string[] = [];
       for (const arg of value.args) args.push(`"${arg}": ${arg}`);

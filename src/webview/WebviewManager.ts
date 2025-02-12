@@ -394,7 +394,7 @@ export class WebviewManager {
     control: Input | Slider,
     drafty_id: string
   ): string {
-    // Start the container div and add a label
+    // TODO: complete dummy loading status
     let html = `<div class="widget-control" id="pctrl-[${control.param}]-${drafty_id}">`;
     html += `<label for="pctrl-[${control.param}]-${drafty_id}-gui">${control.param}</label>`;
 

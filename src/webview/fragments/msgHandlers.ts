@@ -10,6 +10,7 @@ import {
   IScrollToBlockMessage,
   OutputType,
 } from "./msgTypes";
+import { plotUpdateRes } from "./widgetPlot";
 
 
 /**
@@ -319,15 +320,15 @@ function updateBlockOutput(blockId: string, output: OutputType) {
         let resultWrapper = document.createElement("div");
         resultWrapper.className = "widget-plot";
         resultWrapper.id = `pctrl-${blockId}-plot`;
-        resultWrapper.innerText = JSON.stringify(output.content.results);
         widgetWrapper.appendChild(resultWrapper);
+        plotUpdateRes(resultWrapper, output.content.results);
+
       } else if (command === "update") {
         let widgetPlotElm = widgetWrapper.querySelector(
           ".widget-plot"
         ) as HTMLElement;
         if (widgetPlotElm) {
-          widgetPlotElm.innerText = JSON.stringify(output.content.results);
-          widgetWrapper.appendChild(widgetPlotElm);
+          plotUpdateRes(widgetPlotElm, output.content.results);
         }
       }
       break;

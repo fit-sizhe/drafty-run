@@ -34,10 +34,10 @@ export interface RichOutput extends BaseOutput {
 }
 
 // types for updates to interactive plot
-type UpdateRes = {
+export type UpdateRes = {
   plot_type: "scatter" | "surface" | "curve", 
-  args: Map<string, number[]>,
-  data: Map<string, number[] | number[][]> // 1d/2d arrays
+  args: Record<string, number[]>,
+  data: Record<string, number[] | number[][]> // 1d/2d arrays
 }
 
 export interface WidgetOutput extends BaseOutput {
