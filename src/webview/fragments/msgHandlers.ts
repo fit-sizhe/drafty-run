@@ -390,7 +390,7 @@ function scrollToBlock(blockId: string) {
 /**
  * Simple debounce helper, serve as a throttle strategy
  */
-function simpleDebounce<T extends (...args: any[]) => void>(
+export function simpleDebounce<T extends (...args: any[]) => void>(
   callback: T,
   delay: number
 ) {

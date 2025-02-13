@@ -97,7 +97,7 @@ export class PyKernelServer implements ILanguageServer {
         } else {
           if (block.outputs[0].type == "widget") {
             block.outputs[0] = widgetOpt;
-          }else {
+          } else {
             block.outputs = [widgetOpt, ...block.outputs];
           }
         }
@@ -152,11 +152,7 @@ export class PyKernelServer implements ILanguageServer {
       return;
     }
 
-    if (
-      parseRes.directives.plot_executes.length == 0 ||
-      parseRes.directives.controls.length == 0
-    )
-      return;
+    if (parseRes.directives.plot_executes.length == 0) return;
 
     // if no error, generate code snippet for execution
     const initSnippet = generatePythonSnippet(
@@ -194,7 +190,6 @@ export class PyKernelServer implements ILanguageServer {
     }
     if (
       !blockInSession.directives ||
-      blockInSession.directives?.controls.length == 0 ||
       blockInSession.directives?.plot_executes.length == 0
     ) {
       vscode.window.showErrorMessage(

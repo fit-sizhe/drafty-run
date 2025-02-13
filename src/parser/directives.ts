@@ -27,7 +27,7 @@ export type PlotExec = {
   // e.g. "#| curve: y=some_func(x,a,b)" becomes "y" -> {args:["x"], exec:"some_func(x,a,b)"}
   // type‑2 curve and type‑2 scatter: parse x/y from 2-tuple
   // e.g. "#| scatter: [x1,x2]" becomes "x2" -> {args:["x1"], exec:""}
-  commands: Map<string, { args: string[]; exec: string }>;
+  commands: Record<string, { args: string[]; exec: string }>;
 };
 
 export interface Directives {
@@ -614,8 +614,21 @@ function parsePlotDirective(
 
   result.plot = {
     plot_type: normalizedPlotType as "surface" | "scatter" | "curve",
-    commands: commandsMap,
+    commands: mapToObject(commandsMap),
   };
 
   return result;
+}
+
+/**
+ * Converts a Map to a plain object so that it can be JSON‑stringified.
+ */
+function mapToObject(
+  map: Map<string, { args: string[]; exec: string }>
+): Record<string, { args: string[]; exec: string }> {
+  const obj: Record<string, { args: string[]; exec: string }> = {};
+  map.forEach((v, k) => {
+    obj[k] = v;
+  });
+  return obj;
 }

@@ -1,18 +1,5 @@
-import { Directives } from "../parser/directives";
-import { ParseError } from "../parser/directives";
+import { Directives, ParseError } from "../parser/directives";
 import { ErrorOutput } from "../types";
-/**
- * Converts a Map to a plain object so that it can be JSON‑stringified.
- */
-function mapToObject(
-  map: Map<string, { args: string[]; exec: string }>
-): Record<string, { args: string[]; exec: string }> {
-  const obj: Record<string, { args: string[]; exec: string }> = {};
-  map.forEach((v, k) => {
-    obj[k] = v;
-  });
-  return obj;
-}
 
 /**
  * Deep-clones a Directives object, converting any Map properties
@@ -25,7 +12,7 @@ function cloneDirectives(directives: Directives) {
   // Clone execute array, converting each Map to an object.
   const plot_executes = directives.plot_executes.map((pe) => ({
     plot_type: pe.plot_type,
-    commands: mapToObject(pe.commands),
+    commands: pe.commands,
   }));
   return { controls, plot_executes };
 }
@@ -102,7 +89,8 @@ export function generatePythonSnippet(
       continue;
     }
     // For each command in the plot directive, assign a variable.
-    plotExec.commands.forEach((value, key) => {
+    for (const key in plotExec.commands){
+      let value = plotExec.commands[key];
       let resEntry = `{"plot_type": "${plotType}", `;
       // Generate a Python assignment for the command
       if (value.exec != "") lines.push(`${key} = ${value.exec}`);
@@ -111,7 +99,7 @@ export function generatePythonSnippet(
       for (const arg of value.args) args.push(`"${arg}": _x2list(${arg})`);
       resEntry += `, "args": {${args.join(", ")}}}`;
       plotDataAssignments.push(resEntry);
-    });
+    }
   }
 
   // === Build the widget output print statement ===

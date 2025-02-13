@@ -1,5 +1,7 @@
 import Plotly from "plotly.js-dist-min";
 import { UpdateRes } from "../../types";
+import { simpleDebounce } from "./msgHandlers";
+import { postMessage } from "./panelGui";
 
 /**
  * Plots the given array of UpdateRes objects into the provided HTML element.
@@ -11,7 +13,7 @@ export function plotUpdateRes(el: HTMLElement, updates: UpdateRes[]) {
   const traces: any[] = [];
   let layout: any = {};
 
-  updates.forEach(update => {
+  updates.forEach((update) => {
     if (update.plot_type === "scatter" || update.plot_type === "curve") {
       // For 2D plots, we expect:
       //   args: one key/value pair (x data)
@@ -29,7 +31,7 @@ export function plotUpdateRes(el: HTMLElement, updates: UpdateRes[]) {
         y: yData,
         type: "scatter",
         mode: update.plot_type === "curve" ? "lines" : "markers",
-        name: `${xKey} vs ${yKey}`
+        name: `${xKey} vs ${yKey}`,
       };
       traces.push(trace);
 
@@ -59,7 +61,7 @@ export function plotUpdateRes(el: HTMLElement, updates: UpdateRes[]) {
         y: yData,
         z: zData,
         type: "surface",
-        name: `${xKey}-${yKey} surface`
+        name: `${xKey}-${yKey} surface`,
       };
       traces.push(trace);
 
@@ -78,4 +80,72 @@ export function plotUpdateRes(el: HTMLElement, updates: UpdateRes[]) {
   });
 
   Plotly.react(el, traces, layout);
+}
+
+/**
+ * Find all control elements, attach relvant listener
+ * Find all widget-plot elements, render plots from parsed inner text
+ */
+export function attachInteractiveListener() {
+  // render saved plots
+  document.body.querySelectorAll("div.widget-plot").forEach((e) => {
+    let results = JSON.parse((e as HTMLDivElement).innerText);
+    e.innerHTML = "";
+    plotUpdateRes(
+      e as HTMLDivElement,
+      results
+    );
+  });
+  // attach listener, it won't make your plot interactive,
+  // but it at least can tell you what func is missing through errors
+  document.body.querySelectorAll('[id^="pctrl-["]').forEach((e) => {
+    const elmTyp = e.getAttribute("type");
+    const drafty_id = e.id.split("]-")[1].split("-gui")[0];
+    const param = e.id.split("]-")[0].split("-[")[1];
+    if (elmTyp == "range") {
+      let valDisplay = e.nextElementSibling as HTMLSpanElement;
+      e.addEventListener(
+        "input",
+        simpleDebounce(function (evt: Event) {
+          const target = evt.target as HTMLInputElement;
+          valDisplay.textContent = target.value;
+          postMessage({
+            command: "runDirectiveUpdate",
+            msg: {
+              drafty_id,
+              param,
+              current: target.value,
+            },
+          });
+        }, 100)
+      );
+    } else if (elmTyp == "number") {
+      e.addEventListener(
+        "input",
+        simpleDebounce(function (evt) {
+          const target = evt.target as HTMLInputElement;
+          postMessage({
+            command: "runDirectiveUpdate",
+            msg: {
+              drafty_id,
+              param,
+              current: target.value,
+            },
+          });
+        }, 600)
+      );
+    } else {
+      e.addEventListener("change", (evt) => {
+        const target = evt.target as HTMLSelectElement;
+        postMessage({
+          command: "runDirectiveUpdate",
+          msg: {
+            drafty_id,
+            param,
+            current: target.value,
+          },
+        });
+      });
+    }
+  });
 }

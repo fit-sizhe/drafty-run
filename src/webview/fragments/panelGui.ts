@@ -29,6 +29,7 @@ export function initPanelGui(): void {
 
 /**
  * Post a typed message to the extension.
+ * https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage
  */
 export function postMessage(message: OutboundWebviewMessage) {
   vscode.postMessage(message);

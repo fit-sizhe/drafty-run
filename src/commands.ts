@@ -235,13 +235,15 @@ export namespace commands {
         docPath, 
         code, 
         blockInSession,webviewManager.getPanel(docPath));
-      blockInSession.metadata.status = "success";
       // status might be set to "error" in runDirectiveInit
       await server.runDirectiveInit(
         docPath,
         code,
         blockInSession,
         webviewManager.getPanel(docPath));
+      if (blockInSession.metadata.status != "error") {
+        blockInSession.metadata.status = "success";
+      }
     } catch(error) {
       const errStr = error instanceof Error ? error.message : String(error);
       blockInSession.outputs = [
