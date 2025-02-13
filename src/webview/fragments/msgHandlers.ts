@@ -461,6 +461,7 @@ function createControlElement(
       controlElement = document.createElement("input");
       controlElement.setAttribute("type", "number");
       controlElement.id = container.id + "-gui";
+      controlElement.value = String(control.current);
 
       controlElement.addEventListener(
         "input",

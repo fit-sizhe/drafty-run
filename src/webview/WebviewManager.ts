@@ -345,7 +345,6 @@ export class WebviewManager {
             output.stream || ""
           }">${this.escapeHtml(output.content)}</div>`;
       case "widget":
-        // TODO: arrange widget-plot element()
         let controls = output.content.directives?.controls
           .map((c) => this.createControlHtml(c, drafty_id))
           .join("\n");
@@ -356,9 +355,9 @@ export class WebviewManager {
             }">
               ${controls}
             </div>
-            <div class="widget-plot" id="widget-plot-${
+            <div class="widget-plot" id="pctrl-${
               output.content.drafty_id
-            }">
+            }-plot">
               ${JSON.stringify(output.content.results)}
             </div>
           </div>`;
@@ -394,7 +393,6 @@ export class WebviewManager {
     control: Input | Slider,
     drafty_id: string
   ): string {
-    // TODO: complete dummy loading status
     let html = `<div class="widget-control" id="pctrl-[${control.param}]-${drafty_id}">`;
     html += `<label for="pctrl-[${control.param}]-${drafty_id}-gui">${control.param}</label>`;
 
@@ -408,6 +406,8 @@ export class WebviewManager {
           ? ` step="${control.step}"`
           : `step="${(control.max - control.min) / 50}"`) +
         `>`;
+      // Create current value 
+      html += `<span>${control.current}</span>`
     } else if (control.type === "number") {
       // Create a number input
       html += `<input type="number" id="pctrl-[${control.param}]-${drafty_id}-gui" name="${control.param}">`;

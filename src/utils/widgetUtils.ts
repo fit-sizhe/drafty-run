@@ -72,7 +72,11 @@ export function generatePythonSnippet(
 ): string {
   const lines: string[] = [];
   // Begin with the json import.
-  lines.push("import json");
+  if (command != "update"){
+    lines.push("import json");
+    lines.push(getSerializeFunction());
+  }
+  
 
   // === Process controls ===
   // For each control (either slider or input), create a Python assignment.
@@ -102,10 +106,9 @@ export function generatePythonSnippet(
       let resEntry = `{"plot_type": "${plotType}", `;
       // Generate a Python assignment for the command
       if (value.exec != "") lines.push(`${key} = ${value.exec}`);
-      // TODO: add generalized serialization method for np/pandas obj
-      resEntry += `"data": {"${key}": ${key}}`;
+      resEntry += `"data": {"${key}": _x2list(${key})}`;
       let args: string[] = [];
-      for (const arg of value.args) args.push(`"${arg}": ${arg}`);
+      for (const arg of value.args) args.push(`"${arg}": _x2list(${arg})`);
       resEntry += `, "args": {${args.join(", ")}}}`;
       plotDataAssignments.push(resEntry);
     });
@@ -143,7 +146,64 @@ export function convertParseError(parseError: ParseError): ErrorOutput {
   return {
     type: "error",
     timestamp: Date.now(),
-    error: `Error on line ${parseError.line}: ${parseError.message}`,
+    error: `Error on line ${parseError.line}: \n${parseError.message}`,
     traceback: [`Directive: ${parseError.directive}`],
   };
+}
+
+function getSerializeFunction(): string {
+  return `
+_IMPORT_CACHE = {}
+def _try_import(module_name):
+    if module_name in _IMPORT_CACHE:
+        return _IMPORT_CACHE[module_name]
+    try:
+        mod = __import__(module_name, fromlist=["dummy"])
+        _IMPORT_CACHE[module_name] = mod
+        return mod
+    except ImportError:
+        _IMPORT_CACHE[module_name] = None
+        return None
+
+def _recursive_convert(obj):
+    if isinstance(obj, (str, bytes)):
+        return obj
+    try:
+        iter(obj)
+    except TypeError:
+        return obj
+    return [recursive_convert(x) for x in obj]
+
+def _x2list(arr):
+    if isinstance(arr, list):
+        return arr
+
+    tf = _try_import("tensorflow")
+    torch = _try_import("torch")
+    pd = _try_import("pandas")
+    sp = _try_import("scipy.sparse")
+    np = _try_import("numpy")
+
+    if hasattr(arr, "__array_interface__"):
+        if np is not None:
+            return np.asarray(arr).tolist()
+        else:
+            return recursive_convert(arr)
+
+    if tf is not None and isinstance(arr, (tf.Tensor, getattr(tf, "Variable", type(None)))):
+        return arr.tolist() if hasattr(arr, "tolist") else recursive_convert(arr)
+
+    if torch is not None and isinstance(arr, torch.Tensor):
+        return arr.detach().cpu().tolist()
+
+    if pd is not None and isinstance(arr, (pd.DataFrame, pd.Series)):
+        return arr.values.tolist()
+
+    if sp is not None and hasattr(sp, "isspmatrix") and sp.isspmatrix(arr):
+        return arr.toarray().tolist()
+
+    if hasattr(arr, "tolist"):
+        return arr.tolist()
+
+    return _recursive_convert(arr)`;
 }
