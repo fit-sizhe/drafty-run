@@ -402,22 +402,23 @@ export class WebviewManager {
       // Create a slider (range input)
       html +=
         `<input type="range" id="pctrl-[${control.param}]-${drafty_id}-gui" name="${control.param}" ` +
-        `min="${control.min}" max="${control.max}"` +
+        `min="${control.min}" max="${control.max}"` + `value="${control.current}"` +
         (control.step !== undefined
           ? ` step="${control.step}"`
           : `step="${(control.max - control.min) / 50}"`) +
         `>`;
-      // Create current value 
-      html += `<span>${control.current}</span>`
+      // Create current value
+      html += `<span>${control.current}</span>`;
     } else if (control.type === "number") {
       // Create a number input
-      html += `<input type="number" id="pctrl-[${control.param}]-${drafty_id}-gui" name="${control.param}">`;
+      html += `<input type="number" id="pctrl-[${control.param}]-${drafty_id}-gui" value="${control.current}" name="${control.param}">`;
     } else if (control.type === "options") {
       // Create a select element with options
       html += `<select id="pctrl-[${control.param}]-${drafty_id}-gui" name="${control.param}">`;
       if (control.options && control.options.length > 0) {
         control.options.forEach((option) => {
-          html += `<option value="${option}">${option}</option>`;
+          const selectedAttr = option === control.current ? "selected" : "";
+          html += `<option value="${option}" ${selectedAttr}>${option}</option>`;
         });
       }
       html += `</select>`;
