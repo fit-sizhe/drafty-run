@@ -193,6 +193,7 @@ export namespace commands {
       currentSession.codeBlocks.set(foundId, blockInSession);
     } else {
       // reuse old block, but update `content` + language
+      blockInSession.outputs = [];
       blockInSession.content = code;
       blockInSession.info = language??"";
       blockInSession.language = language??"";
@@ -306,4 +307,48 @@ export namespace commands {
       );
     }
   }
+
+  export async function gotoBlockHandler(
+    context: vscode.ExtensionContext,
+    range: vscode.Range,
+  ) {
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      return;
+    }
+
+    const docPath = pathUtils.getDocPath(editor);
+    if (!docPath) {
+      vscode.window.showErrorMessage("Please open a Markdown file first.");
+      return;
+    }
+
+    const stateManager = StateManager.getInstance();
+    if (!stateManager.hasSession(docPath)) {
+      vscode.window.showErrorMessage(
+        `No active Drafty session for: ${path.basename(docPath)}. ` +
+          `Please run "Drafty: Start Session" first.`,
+      );
+      return;
+    }
+
+    const webviewManager = WebviewManager.getInstance();
+    await webviewManager.ensurePanel(
+      context,
+      docPath,
+      panelOps.handleWebviewMessage,
+      panelOps.panelDisposedCallback,
+    );
+    webviewManager.revealPanel(docPath);
+
+    let foundId = await draftyid_utils.ensureDraftyIdInCodeBlock(editor, range);
+
+    const panel = webviewManager.getPanel(docPath);
+    panel?.webview.postMessage({
+      command: "scrollToBlock",
+      blockId: foundId,
+    });
+  }
+
 }

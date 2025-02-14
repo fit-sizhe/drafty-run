@@ -12,29 +12,33 @@ export function activate(context: vscode.ExtensionContext) {
   // Register commands
   const startSessionCmd = vscode.commands.registerCommand(
     "drafty.startSession",
-    () => commands.startSessionHandler(context),
+    () => commands.startSessionHandler(context)
   );
   const runBlockCmd = vscode.commands.registerCommand(
     "drafty.runBlock",
-    (range: vscode.Range) => commands.runBlockHandler(context, range),
+    (range: vscode.Range) => commands.runBlockHandler(context, range)
   );
   const terminateBlockCmd = vscode.commands.registerCommand(
     "drafty.terminateBlock",
-    (range: vscode.Range) => commands.terminateBlockHandler(context, range),
+    (range: vscode.Range) => commands.terminateBlockHandler(context, range)
   );
-  // const bindBlockCmd = vscode.commands.registerCommand(
-  //   "drafty.bindBlock",
-  //   (range: vscode.Range) => commands.bindBlockHandler(context, range),
-  // );
-
+  const gotoBlockCmd = vscode.commands.registerCommand(
+    "drafty.gotoBlock",
+    (range: vscode.Range) => commands.gotoBlockHandler(context, range)
+  );
 
   // Register commands and CodeLens provider
-  context.subscriptions.push(startSessionCmd, runBlockCmd, terminateBlockCmd);
+  context.subscriptions.push(
+    startSessionCmd,
+    runBlockCmd,
+    terminateBlockCmd,
+    gotoBlockCmd
+  );
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       "markdown",
-      new MarkdownCodeLensProvider(),
-    ),
+      new MarkdownCodeLensProvider()
+    )
   );
 
   // Listen for when a Markdown doc is closed
@@ -43,14 +47,15 @@ export function activate(context: vscode.ExtensionContext) {
       if (doc.languageId === "markdown") {
         const docPath = doc.uri.fsPath;
         // Remove runner
-        const pythonAdapter = KernelServerRegistry.getInstance().getRunner("python");
+        const pythonAdapter =
+          KernelServerRegistry.getInstance().getRunner("python");
         pythonAdapter?.disposeServer(docPath);
         // Remove session from StateManager
         StateManager.getInstance().removeSession(docPath);
 
         console.log(`Removed runner and session for closed doc: ${docPath}`);
       }
-    }),
+    })
   );
 
   // Initialize singletons

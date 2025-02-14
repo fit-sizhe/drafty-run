@@ -32,7 +32,14 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
         };
         codeLenses.push(new vscode.CodeLens(range, termCmd));
 
-        // TODO: 3) goto result block by scrolling
+        // 3) goto result block by scrolling
+        const gotoCmd: vscode.Command = {
+          title: "Goto",
+          command: "drafty.gotoBlock",
+          arguments: [range],
+        };
+        codeLenses.push(new vscode.CodeLens(range, gotoCmd))
+        
       }
     }
     return codeLenses;

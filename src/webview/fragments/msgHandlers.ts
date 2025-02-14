@@ -11,8 +11,11 @@ import {
   OutputType,
 } from "./msgTypes";
 import { plotUpdateRes } from "./widgetPlot";
-import { INIT_MAX_RESULT_HEIGHT, INPUT_CTRL_DEBOUNCE_TIME, SLIDER_CTRL_DEBOUNCE_TIME } from "./config";
-
+import {
+  INIT_MAX_RESULT_HEIGHT,
+  INPUT_CTRL_DEBOUNCE_TIME,
+  SLIDER_CTRL_DEBOUNCE_TIME,
+} from "./config";
 
 /**
  * Attach a single global message listener that handles
@@ -323,7 +326,6 @@ function updateBlockOutput(blockId: string, output: OutputType) {
         resultWrapper.id = `pctrl-${blockId}-plot`;
         widgetWrapper.appendChild(resultWrapper);
         plotUpdateRes(resultWrapper, output.content.results);
-
       } else if (command === "update") {
         let widgetPlotElm = widgetWrapper.querySelector(
           ".widget-plot"
@@ -383,6 +385,15 @@ function scrollToBlock(blockId: string) {
   ) as HTMLDivElement | null;
   if (blockContainer) {
     blockContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    // find belly group instead
+    const idPrefix = "result-block-" + "DRAFTY-ID-" + blockId.split("-")[2];
+    const elmInBellyGrp = document.querySelector(
+      `div.block-container[id^='${idPrefix}']`
+    );
+    if (elmInBellyGrp) {
+      elmInBellyGrp.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 }
 
