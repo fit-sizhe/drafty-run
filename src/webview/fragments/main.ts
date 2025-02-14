@@ -16,4 +16,4 @@ declare global {
 
 initPanelGui();
 registerMessageListener();
-setTimeout(()=>attachInteractiveListener(),1000);
+setTimeout(()=>attachInteractiveListener(),500);

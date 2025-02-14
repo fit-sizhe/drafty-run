@@ -87,64 +87,50 @@ export function plotUpdateRes(el: HTMLElement, updates: UpdateRes[]) {
  * Find all widget-plot elements, render plots from parsed inner text
  */
 export function attachInteractiveListener() {
-  // render saved plots
+  // Render saved plots
   document.body.querySelectorAll("div.widget-plot").forEach((e) => {
-    let results = JSON.parse((e as HTMLDivElement).innerText);
+    const results = JSON.parse((e as HTMLDivElement).innerText);
     e.innerHTML = "";
-    plotUpdateRes(
-      e as HTMLDivElement,
-      results
-    );
+    plotUpdateRes(e as HTMLDivElement, results);
   });
-  // attach listener, it won't make your plot interactive,
-  // but it at least can tell you what func is missing through errors
+
+  // Attach listener: while it doesn't make your plot fully interactive,
+  // it can at least tell you which python function is missing via errors.
   document.body.querySelectorAll('[id^="pctrl-["]').forEach((e) => {
     const elmTyp = e.getAttribute("type");
     const drafty_id = e.id.split("]-")[1].split("-gui")[0];
     const param = e.id.split("]-")[0].split("-[")[1];
-    if (elmTyp == "range") {
-      let valDisplay = e.nextElementSibling as HTMLSpanElement;
-      e.addEventListener(
-        "input",
-        simpleDebounce(function (evt: Event) {
-          const target = evt.target as HTMLInputElement;
+
+    // Common update function
+    const updateDirective = (target: HTMLInputElement | HTMLSelectElement) => {
+      postMessage({
+        command: "runDirectiveUpdate",
+        msg: {
+          drafty_id,
+          param,
+          current: target.value,
+        },
+      });
+    };
+
+    if (elmTyp === "range" || elmTyp === "number") {
+      const delay = elmTyp === "range" ? 100 : 600;
+      // For range, also update the adjacent display element
+      const valDisplay =
+        elmTyp === "range" ? (e.nextElementSibling as HTMLSpanElement) : null;
+      const callback = (evt: Event) => {
+        const target = evt.target as HTMLInputElement;
+        if (valDisplay) {
           valDisplay.textContent = target.value;
-          postMessage({
-            command: "runDirectiveUpdate",
-            msg: {
-              drafty_id,
-              param,
-              current: target.value,
-            },
-          });
-        }, 100)
-      );
-    } else if (elmTyp == "number") {
-      e.addEventListener(
-        "input",
-        simpleDebounce(function (evt) {
-          const target = evt.target as HTMLInputElement;
-          postMessage({
-            command: "runDirectiveUpdate",
-            msg: {
-              drafty_id,
-              param,
-              current: target.value,
-            },
-          });
-        }, 600)
-      );
+        }
+        updateDirective(target);
+      };
+      e.addEventListener("input", simpleDebounce(callback, delay));
     } else {
+      // For all other types, listen to the change event.
       e.addEventListener("change", (evt) => {
         const target = evt.target as HTMLSelectElement;
-        postMessage({
-          command: "runDirectiveUpdate",
-          msg: {
-            drafty_id,
-            param,
-            current: target.value,
-          },
-        });
+        updateDirective(target);
       });
     }
   });
