@@ -4,6 +4,7 @@ import { CodeBlockExecution, CellOutput } from "../types";
 import { Environment } from "../managers/EnvironmentManager";
 import { parseDraftyId } from "../parser/draftyid";
 import { Input, Slider } from "../parser/directives";
+import { INIT_MAX_RESULT_HEIGHT } from "./fragments/config";
 
 interface PanelInfo {
   panel: vscode.WebviewPanel;
@@ -63,7 +64,7 @@ export class WebviewManager {
 
       const info: PanelInfo = {
         panel,
-        maxResultHeight: 400,
+        maxResultHeight: INIT_MAX_RESULT_HEIGHT,
       };
 
       // Set up message handling

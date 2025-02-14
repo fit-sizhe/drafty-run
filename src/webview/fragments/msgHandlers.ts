@@ -11,6 +11,7 @@ import {
   OutputType,
 } from "./msgTypes";
 import { plotUpdateRes } from "./widgetPlot";
+import { INIT_MAX_RESULT_HEIGHT, INPUT_CTRL_DEBOUNCE_TIME, SLIDER_CTRL_DEBOUNCE_TIME } from "./config";
 
 
 /**
@@ -158,7 +159,7 @@ function createResultBlock(idSuffix: string): HTMLDivElement {
   const container = document.createElement("div");
   container.className = "block-container status-pending";
   container.id = "result-block-" + idSuffix;
-  container.style.maxHeight = "400px";
+  container.style.maxHeight = `${INIT_MAX_RESULT_HEIGHT}px`;
   container.style.overflowY = "auto";
 
   const header = document.createElement("div");
@@ -449,7 +450,7 @@ function createControlElement(
             current: controlElement!.value,
           },
         });
-      }, 100)
+      }, SLIDER_CTRL_DEBOUNCE_TIME)
     );
 
     container.appendChild(label);
@@ -475,7 +476,7 @@ function createControlElement(
               current: target.value,
             },
           });
-        }, 600)
+        }, INPUT_CTRL_DEBOUNCE_TIME)
       );
     } else if (control.type === "options") {
       const selectEl = document.createElement("select");
