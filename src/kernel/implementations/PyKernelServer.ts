@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import {
   CellOutput,
   CodeBlockExecution,
+  ErrorOutput,
   TextOutput,
   WidgetOutput,
 } from "../../types";
@@ -86,25 +87,37 @@ export class PyKernelServer implements ILanguageServer {
   ): (output: CellOutput) => void {
     return (output: CellOutput) => {
       if (output.type === "text") {
-        const content = JSON.parse(output.content.slice(1, -1));
-        const widgetOpt: WidgetOutput = {
-          timestamp: output.timestamp,
-          ...content,
-        };
-        // make sure the first item is the only widgetOpt
-        if (block.outputs.length == 0) {
-          block.outputs.push(widgetOpt);
+        let newOutput;
+        // relay runtime errors
+        if(output.stream == "stderr") {
+          newOutput = {
+            type: "error",
+            timestamp: output.timestamp,
+            error: output.content.split("\n")[0].split(".py:")[1]
+          } as ErrorOutput;
+          block.outputs.push(newOutput);
+
         } else {
-          if (block.outputs[0].type == "widget") {
-            block.outputs[0] = widgetOpt;
+          const content = JSON.parse(output.content.slice(1, -1));
+          newOutput = {
+            timestamp: output.timestamp,
+            ...content,
+          } as WidgetOutput;
+          // make sure the first item is the only widgetOpt
+          if (block.outputs.length == 0) {
+            block.outputs.push(newOutput);
           } else {
-            block.outputs = [widgetOpt, ...block.outputs];
+            if (block.outputs[0].type == "widget") {
+              block.outputs[0] = newOutput;
+            } else {
+              block.outputs = [newOutput, ...block.outputs];
+            }
           }
         }
         panel.webview.postMessage({
           command: "partialOutput",
           blockId: block.metadata.bindingId,
-          output: widgetOpt,
+          output: newOutput,
         });
       } else {
         block.outputs.push(output);
