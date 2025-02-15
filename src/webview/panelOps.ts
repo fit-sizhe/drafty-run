@@ -133,7 +133,9 @@ export namespace panelOps {
       case "clearState": {
         pythonManager?.clearState(docPath);
         stateManager.clearSession(docPath);
-        updatePanel(docPath);
+        await webviewManager.getPanel(docPath)?.webview.postMessage({
+          command: "clearBody",
+        });
         vscode.window.showInformationMessage(
           `Cleared state for doc: ${path.basename(docPath)}`
         );

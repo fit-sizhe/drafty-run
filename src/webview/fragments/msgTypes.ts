@@ -118,6 +118,10 @@ export interface IScrollToBlockMessage extends IMessageBase {
   blockId: string;
 }
 
+export interface IClearBodyMessage extends IMessageBase {
+  command: "clearBody";
+}
+
 /**
  * Union of messages the extension sends IN to the webview.
  */
@@ -127,7 +131,8 @@ export type InboundExtensionMessage =
   | IUpdateEnvOptionsMessage
   | IUpdateLoadedPathMessage
   | IPartialOutputMessage
-  | IScrollToBlockMessage;
+  | IScrollToBlockMessage
+  | IClearBodyMessage;
 
 /**
  * Combined union of *all* known inbound messages from extension.

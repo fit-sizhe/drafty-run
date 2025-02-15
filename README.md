@@ -29,5 +29,3 @@
    - Click the "Save"/"Save as" button in the results panel to store outputs
    - Use "Load Results" to restore previous session states
 
->**Remember: Always start a session before running code blocks. For more features, check out the detailed documentation below**.
-

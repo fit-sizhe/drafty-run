@@ -48,6 +48,12 @@ export function registerMessageListener(): void {
       case "scrollToBlock":
         handleScrollToBlock(message);
         break;
+        
+      case "clearBody":
+        document
+          .querySelectorAll(".block-container")
+          .forEach((e) => e.remove());
+        break;
     }
   });
 }
