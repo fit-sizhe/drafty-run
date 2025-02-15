@@ -2,9 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2025-02-14
 
-- [ ] reorg codebase for 0.2
+- [x] reorg codebase for 0.2
+- [x] add `Goto` codelens for goto corresponding result block 
+- [x] add support of `Plotly.js` to allow interactive curve/scatter/surface plotting
+- [x] design a comment directive set for rendering interactive plot
+- [x] complete interactive plot loading/saving
 
 ## [0.1.7] - 2025-02-01
 
