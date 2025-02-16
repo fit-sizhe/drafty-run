@@ -242,6 +242,10 @@ export namespace commands {
         code,
         blockInSession,
         webviewManager.getPanel(docPath));
+      // check if any errors found
+      blockInSession.outputs.forEach(o=>{
+        o.type === "error"?blockInSession.metadata.status = "error":null;
+      })
       if (blockInSession.metadata.status != "error") {
         blockInSession.metadata.status = "success";
       }
