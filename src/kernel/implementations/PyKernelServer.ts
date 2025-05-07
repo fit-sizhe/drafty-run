@@ -30,6 +30,49 @@ export class PyKernelServer implements ILanguageServer {
     this.kernels.set(docPath, kernel);
   }
 
+  /**
+   * Preprocesses Python code to handle special cases like cell magic commands
+   * @param code The original code to preprocess
+   * @returns The preprocessed code ready for execution
+   */
+  private preprocessCode(code: string): string {
+    // Split the code into lines
+    const lines = code.split('\n');
+    
+    // Check if the code contains a cell magic command
+    const cellMagicIndex = lines.findIndex(line => line.trim().startsWith('%%'));
+    
+    if (cellMagicIndex !== -1) {
+      // If we found a cell magic command, rearrange the code
+      // 1. First put the cell magic line
+      // 2. Then all non-comment lines
+      // 3. Then all comment lines (optional, for user reference only)
+      const cellMagicLine = lines[cellMagicIndex];
+      const commentLines: string[] = [];
+      const codeLines: string[] = [];
+      
+      // Separate comments and code
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Skip the cell magic line, we'll add it first
+        if (i === cellMagicIndex) continue;
+        
+        // Sort lines into comments and actual code
+        if (line.trim().startsWith('#')) {
+          commentLines.push(line);
+        } else {
+          codeLines.push(line);
+        }
+      }
+      
+      // Reconstruct the code with cell magic first, then code, then comments
+      return [cellMagicLine, ...codeLines, ...commentLines].join('\n');
+    }
+    
+    // If no cell magic, return the original code
+    return code;
+  }
+
   executeCode(
     docPath: string,
     code: string,
@@ -39,8 +82,12 @@ export class PyKernelServer implements ILanguageServer {
     if (!kernel) {
       throw new Error(`No kernel initialized for docPath=${docPath}`);
     }
+    
+    // Preprocess the code before sending to the kernel
+    const processedCode = this.preprocessCode(code);
+    
     // Pass the onPartialOutput to the kernel.execute method so that partial outputs are forwarded.
-    return kernel.execute(code, onPartialOutput);
+    return kernel.execute(processedCode, onPartialOutput);
   }
 
   async runSingleBlock(

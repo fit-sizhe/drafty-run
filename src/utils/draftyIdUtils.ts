@@ -40,13 +40,21 @@ export async function ensureDraftyIdInCodeBlock(
 
     if (existingId) return existingId;
 
-    // Generate and insert new ID if none found
+    // Generate new ID
     const newId = generateDraftyId();
+    
+    // Split the code into lines for analysis
+    const lines = code.split('\n');
+    
+    // Find the indentation of the first non-empty line to preserve it
+    const firstNonEmptyLine = lines.find(line => line.trim().length > 0) || '';
+    const indentation = firstNonEmptyLine.match(/^(\s*)/)![0] || '';
+    
     await editor.edit(editBuilder => {
-        editBuilder.insert(
-            new vscode.Position(range.start.line + 1, 0),
-            `${COMMENT_PREFIX[block.language??"python"]}| ${newId}\n`
-        );
+            editBuilder.insert(
+                new vscode.Position(range.start.line + 1, 0),
+                `${indentation}${COMMENT_PREFIX[block.language??"python"]}| ${newId}\n`
+            );
     });
     return newId;
 }

@@ -2,18 +2,17 @@
 
 
 ## Basic Output Test
-
 ```python
-#| DRAFTY-ID-023-0
+#| DRAFTY-ID-491-0
 #| title: first output!
 print("Hello, World!")
-x = 46
+x = 42
 print(f"The value of x is {x}")
 ```
 
 ## State Persistence Test
 ```python
-#| DRAFTY-ID-374-1
+#| DRAFTY-ID-548-1
 #| title: oh yes
 # x should still be 42 from the first code block
 print(f"x is still {x}")
@@ -44,7 +43,7 @@ print('\nAll processing complete!')
 #| DRAFTY-ID-538-0
 #| title: lalala111
 from PIL import Image
-im = Image.open("../../drafty/assets/icon.png")
+im = Image.open("../../../assets/icon.png")
 print(im.format, im.size, im.mode)
 ```
 
@@ -57,7 +56,7 @@ print(im.format, im.size, im.mode)
 
 ## Matplotlib Visualization Test
 ```python
-#| DRAFTY-ID-469-0
+#| DRAFTY-ID-383-0
 import matplotlib.pyplot as plt
 import numpy as np
 
