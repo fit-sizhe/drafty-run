@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2025-05-07
+
+- [x] fix issue with directives/comments before %% magic commands
+- [x] test pyinstrument with extension
+
 ## [0.2.0] - 2025-02-14
 
 - [x] reorg codebase for 0.2

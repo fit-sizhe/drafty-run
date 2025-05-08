@@ -70,31 +70,35 @@ We provide special directives(lines starting with `#|`) to create interactive pl
 For a detailed explanation, we have implemented the following interactive elements:
 
 1. Sliders
-   - single slider control, `#| slider: param_name, min_val, max_val, step` ("step" is optional)
-   - multiple sliders sharing one range, `#| slider: [param_1, param_2], min_val, max_val, step`
-   - sliders of different ranges, `#| slider: param_1, min, max, step; param_2, min, max, step`
+- single slider control, `#| slider: param_name, min_val, max_val, step` ("step" is optional)
+- multiple sliders sharing one range, `#| slider: [param_1, param_2], min_val, max_val, step`
+- sliders of different ranges, `#| slider: param_1, min, max, step; param_2, min, max, step`
 
 2. Inputs
-   - single number input, `#| input: param_name, default_num`
-   - number inputs sharing one default, `#| input: [param_1, param_2], default`
-   - inputs with different defaults, `#| input: param_1, default_1; param_2, default_2`
-   - single dropdown menu, `#| input: param_name, ["opt1","opt2"]`
-   - multiple dropdown menus, `#| input: param_1, ["opt1","opt2"]; param_2, ["opt3", "opt4"]`
+- single number input, `#| input: param_name, default_num`
+- number inputs sharing one default, `#| input: [param_1, param_2], default`
+- inputs with different defaults, `#| input: param_1, default_1; param_2, default_2`
+- single dropdown menu, `#| input: param_name, ["opt1","opt2"]`
+- multiple dropdown menus, `#| input: param_1, ["opt1","opt2"]; param_2, ["opt3", "opt4"]`
 
 3. Plots
-   + Dynamic plots(that should be updated when tinkering sliders/inputs)
-       - single curve plot, `#| curve: y_name=some_func(x,...)` ("..." indicates other arguments)
-       - multiple curves, `#| curve: y1=func_1(x1,...); y2 = func_2(x2,...)`
-       - single scatter/surface plot, `#| scatter/surface: z=some_func(x,y,...)` 
-       - multiple scatter groups, `#| scatter: z1=func1(x1,y1,...); z2=func2(x2,y2,...)`
-   + Static plots(that should not be updated, usually served as references)
-       - single x-y curve: `#| curve: [x_name,y_name]`
-       - multiple x-y curves: `#| curve: [x_1, y_1]; [x_2, y_2]`
-       - single scatter/surface: `#| scatter/surface: [x_1, y_1, z_1]`
-       - multiple scatter groups/surfaces: `#| scatter/surface: [x_1, y_1, z_1]; [x_2, y_2, z_2]`
++ Dynamic plots(that should be updated when tinkering sliders/inputs)
+   - single curve plot, `#| curve: y_name=some_func(x,...)` ("..." indicates other arguments)
+   - multiple curves, `#| curve: y1=func_1(x1,...); y2 = func_2(x2,...)`
+   - single scatter/surface plot, `#| scatter/surface: z=some_func(x,y,...)` 
+   - multiple scatter groups, `#| scatter: z1=func1(x1,y1,...); z2=func2(x2,y2,...)`
++ Static plots(that should not be updated, usually served as references)
+   - single x-y curve: `#| curve: [x_name,y_name]`
+   - multiple x-y curves: `#| curve: [x_1, y_1]; [x_2, y_2]`
+   - single scatter/surface: `#| scatter/surface: [x_1, y_1, z_1]`
+   - multiple scatter groups/surfaces: `#| scatter/surface: [x_1, y_1, z_1]; [x_2, y_2, z_2]`
 
 ## Extension Configurations
 
 - `drafty.defaultPath`: Default path used when saving results JSON with the 'Save' button, default value is pwd.
 - `drafty.removeOrphanedBlocks`: Whether remove result blocks from the panel when its ID has no matched belly number in MD doc, default is false.
 - `drafty.savingRule`: If set to `latest-only`, old JSON result files are removed before saving new JSON file. Otherwise keep all saved files(`keep-all`).
+
+## Contributing
+
+Clone this repo and run `npm ci`. PR is welcomed.
