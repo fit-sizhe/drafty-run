@@ -235,7 +235,7 @@ function updateBlockStatus(
 
   const statusClass = "status-" + status;
   const execTime = executionTime
-    ? `(${(executionTime / 1000).toFixed(2)}s)`
+    ? `(${(executionTime / 1000).toFixed(4)}s)`
     : "";
   const runLabel = runNum ? `Output [${runNum}]` : "Output [?]";
   let resultTitle = blockId;

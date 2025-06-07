@@ -294,7 +294,7 @@ export class WebviewManager {
   private createBlockHtml(block: CodeBlockExecution, maxResultHeight: number) {
     const statusClass = `status-${block.metadata.status}`;
     const executionTime = block.metadata.executionTime
-      ? `(${(block.metadata.executionTime / 1000).toFixed(2)}s)`
+      ? `(${(block.metadata.executionTime / 1000).toFixed(4)}s)`
       : "";
     const runLabel = block.metadata.runNumber
       ? `Output [${block.metadata.runNumber}]`

@@ -3,6 +3,7 @@ import { CellOutput } from "../../types";
 
 export interface ExecutionResult {
   outputs: CellOutput[];
+  executionTime?: number; // Actual execution time in milliseconds
 }
 
 export interface JupyterMessage {

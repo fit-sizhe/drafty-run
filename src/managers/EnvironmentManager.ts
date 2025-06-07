@@ -192,7 +192,7 @@ export class EnvironmentManager {
     // For each workspace/directory, check current and parent directories
     for (const basePath of searchPaths) {
       let currentPath = basePath;
-      const maxLevels = 3; // Don't go too high up the directory tree
+      const maxLevels = 6;
       
       for (let level = 0; level < maxLevels; level++) {
         const venvPath = path.join(currentPath, ".venv");

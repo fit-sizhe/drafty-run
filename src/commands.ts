@@ -267,8 +267,9 @@ export namespace commands {
       ];
       blockInSession.metadata.status = "error";
     }
-    blockInSession.metadata.executionTime =
-      Date.now() - blockInSession.metadata.timestamp;
+    // blockInSession.metadata.executionTime = blockInSession.metadata.executionStartTime
+    //   ? Date.now() - blockInSession.metadata.executionStartTime
+    //   : Date.now() - blockInSession.metadata.timestamp;
 
     webviewManager.updateBlockStatus(
       docPath, 

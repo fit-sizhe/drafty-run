@@ -79,6 +79,7 @@ export interface ExecutionMetadata {
   executionTime?: number;
   status: "pending" | "running" | "success" | "error";
   timestamp: number;
+  executionStartTime?: number; // Track when actual execution begins (not queued)
   bindingId?: string;
   runNumber?: number;
   title?: string;

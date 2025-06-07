@@ -4,7 +4,6 @@ import {
   CellOutput,
   CodeBlockExecution,
   ErrorOutput,
-  TextOutput,
   WidgetOutput,
 } from "../../types";
 import { PythonKernel } from "./PythonKernel";
@@ -123,7 +122,11 @@ export class PyKernelServer implements ILanguageServer {
       });
     };
 
-    await this.executeCode(docPath, code, onPartialOutput);
+    const result = await this.executeCode(docPath, code, onPartialOutput);
+    // Use the actual execution time from the kernel
+    if (result.executionTime !== undefined) {
+      blockState.metadata.executionTime = result.executionTime;
+    }
   }
 
   /**

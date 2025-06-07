@@ -150,7 +150,7 @@ export class PythonKernel extends BaseKernel {
   private async checkDependencies(pythonPath: string): Promise<{success: boolean, error?: string}> {
     return new Promise((resolve) => {
       // Check if ipykernel is installed by trying to import it
-      exec(`"${pythonPath}" -c "import ipykernel; print(ipykernel.__version__)"`, (error, stdout, stderr) => {
+      exec(`"${pythonPath}" -c "import ipykernel; print(ipykernel.__version__)"`, (error, _out, _err) => {
         if (error) {
           const installCmd = pythonPath.includes('.venv') || pythonPath.includes('venv') 
             ? `"${pythonPath}" -m pip install ipykernel ipython`
@@ -234,12 +234,14 @@ export class PythonKernel extends BaseKernel {
     });
     await sockets.shell.send(executeRequest);
 
+    const startTime = Date.now();
     const shellReply = await sockets.shell.receive();
     if (!shellReply) {
       throw new Error("No execute_reply received on shell channel");
     }
     await iopubPump;
-    return { outputs: finalOutputs };
+    const executionTime = Date.now() - startTime;
+    return { outputs: finalOutputs, executionTime };
   }
 
   /**
