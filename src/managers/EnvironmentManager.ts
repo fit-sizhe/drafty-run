@@ -102,13 +102,18 @@ export class EnvironmentManager {
     const results: Environment[] = [];
 
     vscode.window.setStatusBarMessage("Drafty: Looking for Python Envs", 2000);
-    const condaEnvs = await this.listCondaEnvs();
+    
+    // Run all environment detection methods in parallel for better performance
+    const [condaEnvs, venvs, projectVenvs, systemPythons] = await Promise.all([
+      this.listCondaEnvs(),
+      Promise.resolve(this.listVirtualenvs()),
+      Promise.resolve(this.listProjectVenvs()),
+      this.listSystemPythons()
+    ]);
+    
     results.push(...condaEnvs);
-
-    const venvs = this.listVirtualenvs();
     results.push(...venvs);
-
-    const systemPythons = await this.listSystemPythons();
+    results.push(...projectVenvs);
     results.push(...systemPythons);
     vscode.window.setStatusBarMessage("Drafty: Done with Env Search", 3000);
     // If none found, fallback to "python3" or "python.exe" on Windows
@@ -165,6 +170,58 @@ export class EnvironmentManager {
         resolve(results);
       });
     });
+  }
+
+  // Scan for .venv folders in project root and parent directories
+  private listProjectVenvs(): Environment[] {
+    const out: Environment[] = [];
+    const isWindows = process.platform === "win32";
+    
+    // Get workspace folders or current working directory
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    const searchPaths: string[] = [];
+    
+    if (workspaceFolders) {
+      // Add workspace root directories
+      searchPaths.push(...workspaceFolders.map(folder => folder.uri.fsPath));
+    } else {
+      // Fallback to current working directory
+      searchPaths.push(process.cwd());
+    }
+    
+    // For each workspace/directory, check current and parent directories
+    for (const basePath of searchPaths) {
+      let currentPath = basePath;
+      const maxLevels = 3; // Don't go too high up the directory tree
+      
+      for (let level = 0; level < maxLevels; level++) {
+        const venvPath = path.join(currentPath, ".venv");
+        
+        if (fs.existsSync(venvPath) && fs.statSync(venvPath).isDirectory()) {
+          const pythonPath = isWindows
+            ? path.join(venvPath, "Scripts", "python.exe")
+            : path.join(venvPath, "bin", "python");
+            
+          if (fs.existsSync(pythonPath)) {
+            const projectName = path.basename(currentPath);
+            out.push({
+              label: `project venv: ${projectName}`,
+              path: pythonPath,
+            });
+          }
+        }
+        
+        // Move up one directory level
+        const parentPath = path.dirname(currentPath);
+        if (parentPath === currentPath) {
+          // Reached filesystem root
+          break;
+        }
+        currentPath = parentPath;
+      }
+    }
+    
+    return out;
   }
 
   // Scan virtualenv directories for python executables

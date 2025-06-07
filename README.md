@@ -23,7 +23,7 @@
    - Type "Drafty: Start Session"
    - Select your preferred Python environment in opened panel
 
-   > Note: you will need to have IPython installed in your environment, which is default in normal conda env.
+   > Note: you will need to have IPython and `ipykernel` installed in your environment, which is default in normal conda env.
 
    ![step 2 start a session](https://s3.gifyu.com/images/bSLor.gif)
 
@@ -101,4 +101,4 @@ For a detailed explanation, we have implemented the following interactive elemen
 
 ## Contributing
 
-Clone this repo and run `npm ci`. PR is welcomed.
+Clone this repo and run `npm ci` and `npm run build`. PR is welcomed.
