@@ -25,9 +25,15 @@ export class PyKernelServer implements ILanguageServer {
       return;
     }
     const kernel = new PythonKernel();
-    // Use the directory of the document as the working directory.
-    await kernel.start(envPath, path.dirname(docPath));
-    this.kernels.set(docPath, kernel);
+    try {
+      // Use the directory of the document as the working directory.
+      await kernel.start(envPath, path.dirname(docPath));
+      this.kernels.set(docPath, kernel);
+    } catch (error: any) {
+      // Re-throw with more context about the environment
+      const envName = path.basename(path.dirname(envPath));
+      throw new Error(`Failed to start kernel with Python environment '${envName}': ${error.message}`);
+    }
   }
 
   /**

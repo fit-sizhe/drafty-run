@@ -59,7 +59,13 @@ export namespace commands {
 
     if (pythonAdapter) {
       pythonAdapter.disposeServer(mdFullPath);
-      pythonAdapter.startProcessForDoc(mdFullPath, pythonPath);
+      try {
+        await pythonAdapter.startProcessForDoc(mdFullPath, pythonPath);
+      } catch (error: any) {
+        // Show user-friendly error message
+        vscode.window.showErrorMessage(error.message || 'Failed to start Python kernel');
+        return; // Don't continue with session setup if kernel failed
+      }
     }
     envManager.setSelectedPath(pythonPath, mdFullPath);
 

@@ -1,4 +1,4 @@
-import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import { spawn, ChildProcessWithoutNullStreams, exec } from "child_process";
 import { v4 as uuidv4 } from "uuid";
 import * as net from "net";
 import * as crypto from "crypto";
@@ -56,6 +56,12 @@ export class PythonKernel extends BaseKernel {
   }
 
   async start(pythonPath: string, cwd: string): Promise<void> {
+    // First check if ipykernel is installed
+    const checkResult = await this.checkDependencies(pythonPath);
+    if (!checkResult.success) {
+      throw new Error(checkResult.error);
+    }
+
     const shellPort = await getRandomPort();
     const iopubPort = await getRandomPort();
     const controlPort = await getRandomPort();
@@ -89,9 +95,6 @@ export class PythonKernel extends BaseKernel {
     // uncomment log below to debug kernel startup
     child.stdout.on("data", (data: Buffer) => {
       // console.log(`Kernel stdout: ${data.toString()}`);
-    });
-    child.stderr.on("data", (data: Buffer) => {
-      // console.error(`Kernel stderr: ${data.toString()}`);
     });
     child.on("exit", (code, signal) => {
       console.log(`Kernel exited with code=${code} signal=${signal}`);
@@ -142,6 +145,28 @@ export class PythonKernel extends BaseKernel {
     if (!reply || reply.header.msg_type !== "interrupt_reply") {
       throw new Error("Interrupt failed");
     }
+  }
+
+  private async checkDependencies(pythonPath: string): Promise<{success: boolean, error?: string}> {
+    return new Promise((resolve) => {
+      // Check if ipykernel is installed by trying to import it
+      exec(`"${pythonPath}" -c "import ipykernel; print(ipykernel.__version__)"`, (error, stdout, stderr) => {
+        if (error) {
+          const installCmd = pythonPath.includes('.venv') || pythonPath.includes('venv') 
+            ? `"${pythonPath}" -m pip install ipykernel ipython`
+            : `pip install ipykernel ipython`;
+          
+          resolve({
+            success: false,
+            error: `ipykernel is not installed in the selected Python environment.\n\n` +
+                   `To fix this, run:\n${installCmd}\n\n` +
+                   `Or activate your environment and run:\npip install ipykernel ipython`
+          });
+        } else {
+          resolve({ success: true });
+        }
+      });
+    });
   }
 
   async stop(): Promise<void> {
