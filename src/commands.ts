@@ -162,7 +162,7 @@ export namespace commands {
 
     // 3. Extract Code and Metadata Before Changes
     // directive extraction is bundled in runDirectiveInit/runDirectiveUpdate
-    const {code, language, title} = findMetaForRange(editor.document, range);
+    const {code, language, title, stream} = findMetaForRange(editor.document, range);
 
 
     // 4. Ensure Drafty ID
@@ -188,6 +188,7 @@ export namespace commands {
         bindingId: parseDraftyId(foundId),
         position: range.start.line, // optional
         title: title??"",
+        stream: stream,
         metadata: {
           status: "running",
           timestamp: Date.now(),
@@ -204,6 +205,7 @@ export namespace commands {
       blockInSession.info = language??"";
       blockInSession.language = language??"";
       blockInSession.title = title??"";
+      blockInSession.stream = stream;
       blockInSession.position = range.start.line; // optional
       blockInSession.metadata.status = "running";
       blockInSession.metadata.timestamp = Date.now();

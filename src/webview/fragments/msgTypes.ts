@@ -111,6 +111,7 @@ export interface IPartialOutputMessage extends IMessageBase {
   command: "partialOutput";
   blockId: string;
   output: OutputType;
+  stream?: boolean;
 }
 
 export interface IScrollToBlockMessage extends IMessageBase {

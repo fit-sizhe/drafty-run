@@ -61,7 +61,7 @@
 
 ## Special Directives
 
-We provide special directives(lines starting with `#|`) to create interactive plots. Per ChatGPT, 3 syntax rules for writing directives are:
+We provide special directives(lines starting with `#|`) to create interactive plots and control execution behavior. Per ChatGPT, 3 syntax rules for writing directives are:
 
 1. Start every directive with `#|` followed by a keyword (like `slider`, `input`, or `curve`) and a colon.  
 2. After the colon, list parameters separated by commas—for example, a basic slider is written as `#| slider: param_name, min, max, step`.  
@@ -92,6 +92,11 @@ For a detailed explanation, we have implemented the following interactive elemen
    - multiple x-y curves: `#| curve: [x_1, y_1]; [x_2, y_2]`
    - single scatter/surface: `#| scatter/surface: [x_1, y_1, z_1]`
    - multiple scatter groups/surfaces: `#| scatter/surface: [x_1, y_1, z_1]; [x_2, y_2, z_2]`
+
+4. Execution Control
+- Stream mode for real-time plot updates: `#| stream: true` 
+  - When set to `true`, each new plot overwrites the previous one in real-time (useful for animations)
+  - When set to `false` or omitted, all plots are displayed separately
 
 ## Extension Configurations
 

@@ -102,23 +102,15 @@ export class PyKernelServer implements ILanguageServer {
     panel?: vscode.WebviewPanel
   ) {
     const onPartialOutput = (partialOutput: CellOutput) => {
-      if (partialOutput.type === "image") {
-        // Overwrite old images from the same run
-        const oldImageIndex = blockState.outputs.findIndex(
-          (o) => o.type === "image"
-        );
-        if (oldImageIndex !== -1) {
-          blockState.outputs[oldImageIndex] = partialOutput;
-        } else {
-          blockState.outputs.push(partialOutput);
-        }
-      } else {
-        blockState.outputs.push(partialOutput);
-      }
+      // Always append outputs to the array
+      blockState.outputs.push(partialOutput);
+      
+      // Send to webview with stream flag for display logic
       panel?.webview.postMessage({
         command: "partialOutput",
         blockId: blockState.metadata.bindingId,
         output: partialOutput,
+        stream: blockState.stream,
       });
     };
 

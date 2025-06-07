@@ -89,7 +89,7 @@ function handleUpdateLoadedPath(msg: IUpdateLoadedPathMessage) {
 }
 
 function handlePartialOutput(msg: IPartialOutputMessage) {
-  updateBlockOutput(msg.blockId, msg.output);
+  updateBlockOutput(msg.blockId, msg.output, msg.stream);
 }
 
 function handleScrollToBlock(msg: IScrollToBlockMessage) {
@@ -281,7 +281,7 @@ function updateBlockStatus(
   }
 }
 
-function updateBlockOutput(blockId: string, output: OutputType) {
+function updateBlockOutput(blockId: string, output: OutputType, stream?: boolean) {
   const containerId = "result-block-" + blockId;
   const blockContainer = document.getElementById(
     containerId
@@ -343,24 +343,39 @@ function updateBlockOutput(blockId: string, output: OutputType) {
       break;
     }
     case "image": {
-      let imgWrapper = outputsDiv.querySelector(
-        ".image-output"
-      ) as HTMLDivElement | null;
-      if (!imgWrapper) {
-        imgWrapper = document.createElement("div");
+      if (stream === true) {
+        // Streaming mode: reuse existing image element
+        let imgWrapper = outputsDiv.querySelector(
+          ".image-output"
+        ) as HTMLDivElement | null;
+        if (!imgWrapper) {
+          imgWrapper = document.createElement("div");
+          imgWrapper.classList.add("output", "image-output");
+          outputsDiv.appendChild(imgWrapper);
+        }
+        let imgEl = imgWrapper.querySelector(
+          "img.live-plot"
+        ) as HTMLImageElement | null;
+        if (!imgEl) {
+          imgEl = document.createElement("img");
+          imgEl.classList.add("live-plot");
+          imgWrapper.appendChild(imgEl);
+        }
+        const format = output.format || "png";
+        imgEl.src = `data:image/${format};base64,${output.data}`;
+      } else {
+        // Non-streaming mode: create new image element for each image
+        const imgWrapper = document.createElement("div");
         imgWrapper.classList.add("output", "image-output");
+        
+        const imgEl = document.createElement("img");
+        imgEl.classList.add("live-plot");
+        const format = output.format || "png";
+        imgEl.src = `data:image/${format};base64,${output.data}`;
+        
+        imgWrapper.appendChild(imgEl);
         outputsDiv.appendChild(imgWrapper);
       }
-      let imgEl = imgWrapper.querySelector(
-        "img.live-plot"
-      ) as HTMLImageElement | null;
-      if (!imgEl) {
-        imgEl = document.createElement("img");
-        imgEl.classList.add("live-plot");
-        imgWrapper.appendChild(imgEl);
-      }
-      const format = output.format || "png";
-      imgEl.src = `data:image/${format};base64,${output.data}`;
       break;
     }
     case "error": {

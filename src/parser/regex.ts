@@ -5,3 +5,5 @@ export const BINDINGID_PATTERN =
 export const BARE_DRAFTYID_PATTERN = /^(DRAFTY-ID)-(\d{3})-(\d)$/;
 
 export const TITLE_PATTERN = /^\s*([#/]{1,2}|--)\s*\|\s*title:\s*(.+)$/m;
+
+export const STREAM_PATTERN = /^\s*([#/]{1,2}|--)\s*\|\s*stream:\s*(true|false)$/mi;

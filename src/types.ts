@@ -60,6 +60,7 @@ export interface CodeBlock {
   position: number; // Line number in document where block starts
   title?: string;
   language?: string;
+  stream?: boolean; // Whether to overwrite images during execution
   bindingId?: {
     head: string; // e.g. "DRAFTY-ID"
     belly: string; // e.g. "123"

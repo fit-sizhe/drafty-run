@@ -3,7 +3,7 @@ import markdownit from "markdown-it";
 import { Token } from "markdown-it";
 import { CodeBlock } from "../types";
 import { DraftyIdParts } from "./draftyid";
-import { TITLE_PATTERN, BINDINGID_PATTERN } from "./regex";
+import { TITLE_PATTERN, BINDINGID_PATTERN, STREAM_PATTERN } from "./regex";
 
 export function extractCodeBlocks(text: Token[] | string): CodeBlock[] {
   let tokens: Token[];
@@ -18,9 +18,11 @@ export function extractCodeBlocks(text: Token[] | string): CodeBlock[] {
       const language = token.info.trim().toLowerCase();
       let title: string | undefined;
       let bindingId: undefined | DraftyIdParts;
+      let stream: boolean | undefined;
 
       const titlematch = token.content.match(TITLE_PATTERN);
       title = titlematch?.[2]?.trim();
+ 
       const idmatch = token.content.match(BINDINGID_PATTERN);
       if (idmatch) {
         bindingId = {
@@ -29,6 +31,11 @@ export function extractCodeBlocks(text: Token[] | string): CodeBlock[] {
           tail: parseInt(idmatch[4], 10),
         };
       }
+      
+      const streamMatch = token.content.match(STREAM_PATTERN);
+      if (streamMatch) {
+        stream = streamMatch[2].toLowerCase() === 'true';
+      }
 
       return {
         content: token.content,
@@ -36,6 +43,7 @@ export function extractCodeBlocks(text: Token[] | string): CodeBlock[] {
         position: token.map![0],
         title,
         language,
+        stream,
         bindingId,
       };
     });
@@ -62,15 +70,17 @@ export function findMetaForRange(
   code: string;
   language: string | undefined;
   title: string | undefined;
+  stream: boolean | undefined;
 } {
   const text = document.getText(range);
   const md = markdownit();
   const tokens = md.parse(text, {});
-  const { language, title } = extractCodeBlocks(tokens)[0];
+  const { language, title, stream } = extractCodeBlocks(tokens)[0];
 
   return {
     code: text.replace(/^```[\w\-]*\s*|```$/gm, ""),
     language,
     title,
+    stream,
   };
 }
