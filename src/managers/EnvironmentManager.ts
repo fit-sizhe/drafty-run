@@ -305,23 +305,41 @@ export class EnvironmentManager {
           resolve(this.parseCondaEnvs(stdout));
         });
       } else {
-        // On Unix-like systems, try to source the appropriate RC file
+        // On Unix-like systems, first check if conda is available
         const shell = await this.findShell();
-        let cmd: string;
+        let checkCmd: string;
         if (shell === "zsh") {
-          cmd = "source ~/.zshrc 2>/dev/null || true; conda env list --json";
+          checkCmd = "source ~/.zshrc 2>/dev/null || true; which conda";
         } else if (shell === "bash") {
-          cmd = "source ~/.bashrc 2>/dev/null || true; conda env list --json";
+          checkCmd = "source ~/.bashrc 2>/dev/null || true; which conda";
         } else {
-          cmd = "conda env list --json"; // fallback for 'sh'
+          checkCmd = "which conda"; // fallback for 'sh'
         }
-        const options = { shell };
-        exec(cmd, options, (error, stdout) => {
-          if (error) {
-            console.error("Could not run conda env list:", error);
+        
+        // First check if conda exists
+        exec(checkCmd, { shell }, (checkError, checkStdout) => {
+          if (checkError || !checkStdout.trim()) {
+            // Conda not found, return empty array
             return resolve([]);
           }
-          resolve(this.parseCondaEnvs(stdout));
+          
+          // Conda found, now get the environments
+          let cmd: string;
+          if (shell === "zsh") {
+            cmd = "source ~/.zshrc 2>/dev/null || true; conda env list --json";
+          } else if (shell === "bash") {
+            cmd = "source ~/.bashrc 2>/dev/null || true; conda env list --json";
+          } else {
+            cmd = "conda env list --json"; // fallback for 'sh'
+          }
+          
+          exec(cmd, { shell }, (error, stdout) => {
+            if (error) {
+              console.error("Could not run conda env list:", error);
+              return resolve([]);
+            }
+            resolve(this.parseCondaEnvs(stdout));
+          });
         });
       }
     });
