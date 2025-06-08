@@ -26,13 +26,18 @@ export function activate(context: vscode.ExtensionContext) {
     "drafty.gotoBlock",
     (range: vscode.Range) => commands.gotoBlockHandler(context, range)
   );
+  const runAllBlocksCmd = vscode.commands.registerCommand(
+    "drafty.runAllBlocks",
+    (documentUri: vscode.Uri) => commands.runAllBlocksHandler(context, documentUri)
+  );
 
   // Register commands and CodeLens provider
   context.subscriptions.push(
     startSessionCmd,
     runBlockCmd,
     terminateBlockCmd,
-    gotoBlockCmd
+    gotoBlockCmd,
+    runAllBlocksCmd
   );
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(

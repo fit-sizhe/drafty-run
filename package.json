@@ -61,6 +61,10 @@
       {
         "command": "drafty.gotoBlock",
         "title": "Drafty: Goto Results"
+      },
+      {
+        "command": "drafty.runAllBlocks",
+        "title": "Drafty: Run All Blocks"
       }
     ]
   },

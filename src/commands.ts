@@ -364,4 +364,73 @@ export namespace commands {
     });
   }
 
+  export async function runAllBlocksHandler(
+    context: vscode.ExtensionContext,
+    documentUri: vscode.Uri,
+  ) {
+    const docPath = documentUri.fsPath;
+    const editor = vscode.window.activeTextEditor;
+    
+    if (!editor || editor.document.uri.fsPath !== docPath) {
+      vscode.window.showErrorMessage("Please open the markdown file first.");
+      return;
+    }
+
+    const stateManager = StateManager.getInstance();
+    const webviewManager = WebviewManager.getInstance();
+    
+    // Start session if not already started
+    if (!stateManager.hasSession(docPath)) {
+      await startSessionHandler(context);
+      vscode.window.showInformationMessage(`Click "Run All" again to run all blocks`);
+      return;
+    }
+
+    // Ensure webview panel is created and visible
+    await webviewManager.ensurePanel(
+      context,
+      docPath,
+      panelOps.handleWebviewMessage,
+      panelOps.panelDisposedCallback,
+    );
+    webviewManager.revealPanel(docPath);
+
+    // Parse all Python code blocks from the document
+    const markdown = editor.document.getText();
+    const tokens = parseMarkdownContent(markdown);
+    const codeBlocks = extractCodeBlocks(tokens).filter(block => 
+      block.language === "python"
+    );
+
+    vscode.window.showInformationMessage(`Running ${codeBlocks.length} Python code blocks sequentially...`);
+
+    // Run each code block sequentially
+    for (let i = 0; i < codeBlocks.length; i++) {
+      const block = codeBlocks[i];
+      const startLine = block.position;
+      
+      // Find the end line of the code block
+      const lines = editor.document.getText().split('\n');
+      let endLine = startLine + 1;
+      for (let j = startLine + 1; j < lines.length; j++) {
+        if (lines[j].includes('```')) {
+          endLine = j;
+          break;
+        }
+      }
+      
+      const range = new vscode.Range(startLine, 0, endLine, 0);
+      
+      try {
+        await runBlockHandler(context, range);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to run block ${i + 1}: ${error}`);
+        break;
+      }
+    }
+
+    vscode.window.showInformationMessage("Finished running all Python code blocks.");
+  }
+
 }

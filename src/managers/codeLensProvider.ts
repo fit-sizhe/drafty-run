@@ -39,6 +39,15 @@ export class MarkdownCodeLensProvider implements vscode.CodeLensProvider {
           arguments: [range],
         };
         codeLenses.push(new vscode.CodeLens(range, gotoCmd))
+
+        // 4) Run all codebloks sequentially
+
+        const runAllCmd: vscode.Command = {
+          title: "Run All",
+          command: "drafty.runAllBlocks",
+          arguments: [document.uri]
+        };
+        codeLenses.push(new vscode.CodeLens(range, runAllCmd));
         
       }
     }
