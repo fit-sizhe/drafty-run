@@ -45,6 +45,16 @@
       display: flex;
       justify-content: space-between;
     }
+    .clickable-header {
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    .clickable-header:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .clickable-header:active {
+      background: var(--vscode-list-activeSelectionBackground);
+    }
     .block-header .status {
       text-transform: capitalize;
     }

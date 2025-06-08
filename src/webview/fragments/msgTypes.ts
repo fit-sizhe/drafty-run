@@ -55,6 +55,11 @@ export interface IRunDirectiveUpdateMessage extends IMessageBase {
   };
 }
 
+export interface IScrollToCodeBlockMessage extends IMessageBase {
+  command: "scrollToCodeBlock";
+  draftyId: string;
+}
+
 /**
  * Union of messages the webview sends OUT to the extension.
  */
@@ -67,7 +72,8 @@ export type OutboundWebviewMessage =
   | ILoadResultsMessage
   | ISaveAsMessage
   | ISaveMessage
-  | IRunDirectiveUpdateMessage;
+  | IRunDirectiveUpdateMessage
+  | IScrollToCodeBlockMessage;
 
 // ------------------
 // Extension → Webview messages

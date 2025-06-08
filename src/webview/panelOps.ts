@@ -7,6 +7,7 @@ import { StateManager } from "../managers/StateManager";
 import { EnvironmentManager } from "../managers/EnvironmentManager";
 import { WebviewManager } from "./WebviewManager";
 import { Input, Slider } from "../parser/directives";
+import { findCodeBlockRangeByDraftyId } from "../utils/draftyIdUtils";
 
 export namespace panelOps {
   export function updatePanel(docPath: string) {
@@ -139,6 +140,39 @@ export namespace panelOps {
         vscode.window.showInformationMessage(
           `Cleared state for doc: ${path.basename(docPath)}`
         );
+        break;
+      }
+
+      case "scrollToCodeBlock": {
+        try {
+          // Open the document first to ensure it's the active editor
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(docPath));
+          const editor = await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
+          
+          const range = findCodeBlockRangeByDraftyId(editor.document, message.draftyId);
+          
+          if (range) {
+            editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+            editor.selection = new vscode.Selection(range.start, range.start);
+            
+            // Add visual highlight that fades away
+            const highlightDecorationType = vscode.window.createTextEditorDecorationType({
+              backgroundColor: 'rgba(255, 255, 0, 0.2)', // Yellow highlight
+              border: '1px solid rgba(255, 255, 0, 0.8)',
+              borderRadius: '3px'
+            });
+            
+            editor.setDecorations(highlightDecorationType, [range]);
+            
+            // Remove highlight after 2 seconds
+            setTimeout(() => {
+              highlightDecorationType.dispose();
+            }, 1000);
+          }
+        } catch (error) {
+          console.error("Failed to scroll to code block:", error);
+          vscode.window.showErrorMessage(`Failed to navigate to code block: ${message.draftyId}`);
+        }
         break;
       }
     }

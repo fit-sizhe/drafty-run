@@ -172,7 +172,16 @@ function createResultBlock(idSuffix: string): HTMLDivElement {
   container.style.overflowY = "auto";
 
   const header = document.createElement("div");
-  header.className = "block-header";
+  header.className = "block-header clickable-header";
+  header.title = "Click to navigate to code block";
+  
+  // Add click handler to navigate to corresponding code block
+  header.addEventListener("click", () => {
+    postMessage({
+      command: "scrollToCodeBlock",
+      draftyId: idSuffix,
+    });
+  });
 
   const spanStatus = document.createElement("span");
   spanStatus.className = "status";

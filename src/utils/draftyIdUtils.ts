@@ -4,6 +4,7 @@ import { parseDraftyId } from "../parser/draftyid";
 import { SessionState } from "../managers/StateManager";
 import { CodeBlock, CodeBlockExecution } from "../types";
 import { WebviewManager } from "../webview/WebviewManager";
+import { parseMarkdownContent } from "../parser/block";
 
 
 interface BellyGroupDocInfo {
@@ -218,3 +219,43 @@ function getOrderedBlockIds(session: SessionState): string[] {
     }
     return result;
   }
+
+/**
+ * Find the range of a code block in the document by its drafty ID
+ */
+export function findCodeBlockRangeByDraftyId(
+  document: vscode.TextDocument,
+  draftyId: string
+): vscode.Range | null {
+  const tokens = parseMarkdownContent(document.getText());
+  const codeBlocks = extractCodeBlocks(tokens);
+  
+  for (const block of codeBlocks) {
+    if (block.bindingId) {
+      const blockId = `${block.bindingId.head}-${block.bindingId.belly}-${block.bindingId.tail}`;
+      if (blockId === draftyId) {
+        // Use the position directly from the parser
+        const startLine = block.position;
+        const lines = document.getText().split('\n');
+        
+        // Find the end of the code block
+        for (let j = startLine + 1; j < lines.length; j++) {
+          if (lines[j].includes('```')) {
+            return new vscode.Range(
+              new vscode.Position(startLine, 0),
+              new vscode.Position(j, lines[j].length)
+            );
+          }
+        }
+        
+        // If no closing ``` found, just return the start line
+        return new vscode.Range(
+          new vscode.Position(startLine, 0),
+          new vscode.Position(startLine, lines[startLine]?.length || 0)
+        );
+      }
+    }
+  }
+  
+  return null;
+}
