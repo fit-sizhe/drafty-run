@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2025-06-07
+
+- **Project Virtual Environment Detection**: Automatically detect `.venv` folders in project root and parent directories (poetry, uv, etc.)
+- **Stream Directive for Plot Control**: New `#| stream: true/false` directive to control image output behavior
+  - `stream: true` - Real-time plot updates (overwrites previous images for animations)
+  - `stream: false` or omitted - Display all plots separately
+- **Clickable Result Block Headers**: Click result block headers to navigate to corresponding code blocks in markdown
+- **Run All CodeLens**: New "Run All" button on each Python code block to execute all blocks sequentially
+- **Improved Error Handling**: Better dependency checking and user-friendly error messages for missing ipykernel/ipython
+- **Webview Display Precision**: Execution times now display with 4 decimal places
+- **Missing Dependencies**: Added proactive checks for ipykernel installation with helpful installation instructions
+
 ## [0.2.1] - 2025-05-07
 
 - [x] fix issue with directives/comments before %% magic commands
