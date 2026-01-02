@@ -99,6 +99,6 @@
     "markdown-it": "^14.1.0",
     "plotly.js-dist-min": "^3.0.0",
     "uuid": "^9.0.1",
-    "zeromq": "^6.3.0"
+    "zeromq": "^6.5.0"
   }
 }
